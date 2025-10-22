@@ -76,3 +76,19 @@ python test_twitter_utils.py
 
 
 You should see an output indicating that all tests passed successfully.
+
+Troubleshooting
+
+Error: cannot find Chrome binary
+
+This is the most common error and means that Selenium was unable to find the Google Chrome browser application on your system.
+
+Solution:
+
+Install Google Chrome: Make sure you have the official Google Chrome browser installed, not just Chromium. You can download it from the official Google Chrome website.
+
+For Linux Users: If you are on a Debian-based Linux distribution (like Ubuntu), you can install it via the terminal:
+
+wget [https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb](https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb)
+sudo dpkg -i google-chrome-stable_current_amd64.deb
+sudo apt-get install -f 
