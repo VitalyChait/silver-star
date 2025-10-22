@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Silver Star | Interactive Technical Stack</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Slate and Sky -->
+    <!-- Application Structure Plan: The application is designed as an interactive dashboard. A fixed navigation sidebar allows users to select a specific layer of the tech stack (e.g., Frontend, Backend). The main content area dynamically updates to show detailed information for the selected layer, including a recommendation, pros/cons, and a visual rating chart. This structure was chosen to transform a linear document into an engaging, non-linear exploratory experience, allowing users to quickly access specific information without scrolling. -->
+    <!-- Visualization & Content Choices: Report Info: Tech stack recommendation -> Goal: Inform & Compare -> Viz/Presentation Method: The core content is displayed in styled cards. Pros and cons are listed with icons for quick visual parsing. A key visualization is a Radar Chart (from Chart.js) that rates each recommended technology on key metrics (Performance, Scalability, etc.). -> Interaction: Clicking a nav item updates the main content and the radar chart dynamically. -> Justification: This interactive approach makes the dense technical information more digestible and visually appealing than a static document. The chart provides a quick, comparative summary of why a technology was chosen. Library/Method: Vanilla JS for state and DOM updates, Chart.js for visualization. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc; /* slate-50 */
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 450px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 320px;
+            max-height: 400px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 350px;
+            }
+        }
+        .nav-link.active {
+            background-color: #0284c7; /* sky-600 */
+            color: white;
+        }
+        .nav-link.active svg {
+            color: white;
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <div id="app" class="flex flex-col md:flex-row min-h-screen">
+        
+        <!-- Sidebar Navigation -->
+        <nav id="sidebar" class="w-full md:w-64 bg-slate-800 text-white p-4 md:p-6 flex-shrink-0">
+            <div class="flex items-center mb-8">
+                <div class="w-10 h-10 bg-sky-500 rounded-full flex items-center justify-center mr-3">
+                    <span class="text-white font-bold text-xl">SS</span>
+                </div>
+                <h1 class="text-xl font-bold">Silver Star</h1>
+            </div>
+            <ul id="nav-links" class="space-y-2">
+                <!-- Navigation links will be populated by JS -->
+            </ul>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="flex-1 p-4 sm:p-6 md:p-10 bg-slate-50 overflow-y-auto">
+            <div id="content-area">
+                <!-- Dynamic content will be injected here -->
+            </div>
+        </main>
+
+    </div>
+
+    <script>
+        const techStackData = {
+            'introduction': {
+                title: 'Technical Stack Plan',
+                icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M9 12h3.75M9 15h3.75M9 18h3.75m3 .75H18a2.25 2.25 0 002.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 00-1.123-.08m-5.801 0c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 00.75-.75 2.25 2.25 0 00-.1-.664m-5.8 0A2.251 2.251 0 0113.5 2.25H15c1.012 0 1.867.668 2.15 1.586m-5.8 0c-.376.023-.75.05-1.124.08C6.095 4.01 5.25 4.973 5.25 6.108V18.75c0 1.243.87 2.25 1.969 2.25H18A2.25 2.25 0 0020.25 18.75V8.25A2.25 2.25 0 0018 6H9.75A2.25 2.25 0 017.5 3.75m0 0A2.25 2.25 0 005.25 6" />`,
+                content: `
+                    <p class="text-lg text-slate-600">This document outlines the recommended technical stack for the Silver Star project. The choices are tailored to support a Python backend, extensive use of background AI agents, real-time user interaction, and scalability.</p>
+                `,
+                principles: [
+                    { title: "Python-centric Backend", text: "Leverage Python's robust ecosystem for web development and AI." },
+                    { title: "Scalability", text: "The architecture must handle asynchronous background tasks and a growing number of users and agents." },
+                    { title: "Developer Experience", text: "Choose tools that are well-documented, popular, and offer a smooth development workflow." },
+                    { title: "Flexibility", text: "Allow for easy integration of new AI features and services in the future." },
+                ]
+            },
+            'frontend': {
+                title: 'Frontend (UI)',
+                icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3" />`,
+                recommendation: 'React (with Next.js)',
+                why: "React is the industry standard for building dynamic, component-based user interfaces. When paired with the Next.js framework, it provides a fantastic developer experience with server-side rendering (SSR) for fast initial page loads and great SEO, which is crucial for a public-facing website.",
+                pros: [
+                    "Large Ecosystem of libraries and tools.",
+                    "Strong Community and excellent documentation.",
+                    "Component-Based architecture makes code reusable.",
+                    "Performance optimizations out-of-the-box."
+                ],
+                cons: [
+                    "Steeper learning curve for newcomers.",
+                    "Can feel complex to manage all the moving parts."
+                ],
+                chartData: [5, 4, 5, 5] // Perf, Scale, DevEx, Eco
+            },
+            'backend': {
+                title: 'Backend (Logic)',
+                icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M17.25 6.75c0 3.142-2.558 5.69-5.69 5.69s-5.69-2.558-5.69-5.69c0-3.142 2.558-5.69 5.69-5.69s5.69 2.558 5.69 5.69z" /><path stroke-linecap="round" stroke-linejoin="round" d="M11.56 5.69A5.667 5.667 0 0117.25 11.25a5.667 5.667 0 01-11.38 0c0-2.909 1.832-5.418 4.4-6.321" /><path stroke-linecap="round" stroke-linejoin="round" d="M11.56 5.69A5.667 5.667 0 016.25 11.25a5.667 5.667 0 0111.38 0c0-2.909-1.832-5.418-4.4-6.321" /><path stroke-linecap="round" stroke-linejoin="round" d="M11.56 5.69A5.667 5.667 0 0111.25 17.25a5.667 5.667 0 010-11.38c.909 0 1.77.205 2.55.578" />`,
+                recommendation: 'FastAPI',
+                why: "For an application heavy on API interactions and background tasks, FastAPI is the ideal modern Python framework. It's built for high performance and is incredibly fast. Its native support for `asyncio` is perfect for managing concurrent operations.",
+                pros: [
+                    "High Performance, comparable to Node.js and Go.",
+                    "Asynchronous support is built-in and first-class.",
+                    "Automatic interactive API documentation (Swagger UI).",
+                    "Modern type hinting for data validation."
+                ],
+                cons: [
+                    "Younger framework with a smaller plugin ecosystem than Django.",
+                    "Less 'batteries-included', requires integrating libraries manually."
+                ],
+                chartData: [5, 4, 5, 3]
+            },
+             'database': {
+                title: 'Database',
+                icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375" />`,
+                recommendation: 'PostgreSQL',
+                why: "PostgreSQL is a powerful, open-source object-relational database known for its reliability and feature robustness. It handles complex queries well and has excellent support for JSON data, giving a good mix of structured and semi-structured data storage.",
+                pros: [
+                    "Battle-tested reliability and stability.",
+                    "Advanced features like full-text search and JSONB support.",
+                    "Highly scalable for large volumes of data.",
+                    "Excellent library support in the Python ecosystem."
+                ],
+                cons: [
+                    "Can be more complex to set up and manage than simpler databases."
+                ],
+                chartData: [4, 5, 4, 5]
+            },
+            'background_tasks': {
+                title: 'Background Tasks',
+                icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 01-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 013.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 013.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 01-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.898 20.572L16.5 21.75l-.398-1.178a3.375 3.375 0 00-2.455-2.456L12.75 18l1.178-.398a3.375 3.375 0 002.455-2.456L16.5 14.25l.398 1.178a3.375 3.375 0 002.456 2.456l1.178.398-1.178.398a3.375 3.375 0 00-2.456 2.456z" />`,
+                recommendation: 'Celery & Redis',
+                why: "This is the de-facto standard for handling background tasks in Python. Celery is a powerful distributed task queue that decouples long-running AI agent tasks from the web application, and Redis is an incredibly fast in-memory data store that acts as the message broker.",
+                pros: [
+                    "Decouples long-running tasks, keeping the website responsive.",
+                    "Horizontally scalable by adding more worker machines.",
+                    "Reliable, with built-in mechanisms for retrying failed tasks.",
+                    "Excellent monitoring tools available (e.g., Flower)."
+                ],
+                cons: [
+                    "Adds operational complexity, requiring multiple services to manage."
+                ],
+                chartData: [4, 5, 3, 4]
+            },
+            'ai_development': {
+                title: 'AI Development',
+                icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />`,
+                recommendation: 'LangChain / LlamaIndex',
+                why: "These frameworks provide essential building blocks for creating applications powered by Large Language Models (LLMs). LangChain is excellent for complex agentic workflows with tool use, while LlamaIndex excels at connecting LLMs to your private data for retrieval-augmented generation (RAG).",
+                pros: [
+                    "Abstracts away complexity of interacting with LLMs.",
+                    "Provides pre-built components for common tasks.",
+                    "Flexible and supports a wide variety of LLM providers."
+                ],
+                cons: [
+                    "Rapidly evolving frameworks can lead to breaking changes."
+                ],
+                chartData: [4, 4, 4, 5]
+            },
+            'summary': {
+                title: 'Stack Summary',
+                icon: `<path stroke-linecap="round" stroke-linejoin="round" d="M9 4.5v15m6-15v15m-10.875 0h15.75c.621 0 1.125-.504 1.125-1.125V5.625c0-.621-.504-1.125-1.125-1.125H4.125C3.504 4.5 3 5.004 3 5.625v12.75c0 .621.504 1.125 1.125 1.125z" />`,
+                table: [
+                  { layer: 'Frontend', tech: 'React (Next.js)', why: 'Modern, performant, great developer experience, huge ecosystem.' },
+                  { layer: 'Backend API', tech: 'FastAPI', why: 'High-performance, native async support, great for APIs and AI.' },
+                  { layer: 'Database', tech: 'PostgreSQL', why: 'Reliable, scalable, and handles both structured and JSON data well.' },
+                  { layer: 'Background Tasks', tech: 'Celery & Redis', why: 'Industry standard for running asynchronous Python tasks. Decouples agents from the web app.' },
+                  { layer: 'AI Development', tech: 'LangChain / LlamaIndex', why: 'Powerful frameworks for building complex, data-aware AI agents and RAG pipelines.' },
+                  { layer: 'Deployment', tech: 'Docker & Cloud Provider', why: 'Containerize each part of the stack for consistent, scalable deployment.' }
+                ]
+            }
+        };
+
+        let currentChart = null;
+
+        function renderContent(key) {
+            const data = techStackData[key];
+            const contentArea = document.getElementById('content-area');
+            
+            contentArea.innerHTML = '';
+            const contentWrapper = document.createElement('div');
+            contentWrapper.className = 'fade-in';
+            
+            if (key === 'introduction') {
+                contentWrapper.innerHTML = `
+                    <div class="mb-10">
+                        <h2 class="text-3xl md:text-4xl font-bold text-slate-900 mb-2">${data.title}</h2>
+                        ${data.content}
+                    </div>
+                    <h3 class="text-2xl font-bold text-slate-900 mb-4 border-b pb-2">Guiding Principles</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        ${data.principles.map(p => `
+                            <div class="bg-white p-6 rounded-lg border border-slate-200">
+                                <h4 class="font-bold text-sky-600 mb-2">${p.title}</h4>
+                                <p class="text-slate-600">${p.text}</p>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            } else if (key === 'summary') {
+                contentWrapper.innerHTML = `
+                    <h2 class="text-3xl md:text-4xl font-bold text-slate-900 mb-6">${data.title}</h2>
+                    <div class="bg-white p-2 rounded-lg border border-slate-200 shadow-sm">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left">
+                                <thead class="border-b bg-slate-50">
+                                    <tr>
+                                        <th class="p-4 font-semibold text-slate-600">Layer</th>
+                                        <th class="p-4 font-semibold text-slate-600">Technology</th>
+                                        <th class="p-4 font-semibold text-slate-600">Justification</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${data.table.map((row, i) => `
+                                        <tr class="border-b last:border-0 ${i % 2 === 0 ? '' : 'bg-slate-50/50'}">
+                                            <td class="p-4 font-medium">${row.layer}</td>
+                                            <td class="p-4"><span class="bg-sky-100 text-sky-800 text-sm font-medium px-2 py-1 rounded-full">${row.tech}</span></td>
+                                            <td class="p-4 text-slate-600">${row.why}</td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                `;
+            } else {
+                 contentWrapper.innerHTML = `
+                    <h2 class="text-3xl md:text-4xl font-bold text-slate-900 mb-4">${data.title}</h2>
+                    <div class="grid grid-cols-1 lg:grid-cols-5 gap-8">
+                        <div class="lg:col-span-3">
+                            <div class="space-y-6">
+                                <div class="bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
+                                    <h3 class="text-xl font-semibold mb-2 text-slate-800">Recommendation: <span class="text-sky-600">${data.recommendation}</span></h3>
+                                    <p class="text-slate-600">${data.why}</p>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="bg-white p-6 rounded-lg border border-slate-200">
+                                        <h4 class="font-semibold text-lg mb-3 text-green-600">Pros</h4>
+                                        <ul class="space-y-2">
+                                            ${data.pros.map(p => `<li class="flex items-start"><span class="text-green-500 mr-2 mt-1">✔</span> <span class="text-slate-600">${p}</span></li>`).join('')}
+                                        </ul>
+                                    </div>
+                                    <div class="bg-white p-6 rounded-lg border border-slate-200">
+                                        <h4 class="font-semibold text-lg mb-3 text-red-600">Cons</h4>
+                                        <ul class="space-y-2">
+                                            ${data.cons.map(c => `<li class="flex items-start"><span class="text-red-500 mr-2 mt-1">✖</span> <span class="text-slate-600">${c}</span></li>`).join('')}
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="lg:col-span-2">
+                             <div class="bg-white p-6 rounded-lg border border-slate-200 shadow-sm h-full">
+                                <h3 class="text-xl font-semibold mb-4 text-center text-slate-800">Technology Ratings</h3>
+                                <div class="chart-container">
+                                    <canvas id="techChart"></canvas>
+                                </div>
+                             </div>
+                        </div>
+                    </div>
+                 `;
+            }
+            contentArea.appendChild(contentWrapper);
+
+            if (data.chartData) {
+                renderChart(data.chartData);
+            }
+        }
+
+        function renderChart(data) {
+            const ctx = document.getElementById('techChart').getContext('2d');
+            if (currentChart) {
+                currentChart.destroy();
+            }
+            currentChart = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: ['Performance', 'Scalability', 'Dev Experience', 'Ecosystem'],
+                    datasets: [{
+                        label: 'Rating',
+                        data: data,
+                        backgroundColor: 'rgba(56, 189, 248, 0.2)',
+                        borderColor: 'rgba(14, 165, 233, 1)',
+                        pointBackgroundColor: 'rgba(14, 165, 233, 1)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgba(14, 165, 233, 1)'
+                    }]
+                },
+                options: {
+                    maintainAspectRatio: false,
+                    responsive: true,
+                    scales: {
+                        r: {
+                            angleLines: { color: 'rgba(0, 0, 0, 0.1)' },
+                            grid: { color: 'rgba(0, 0, 0, 0.1)' },
+                            pointLabels: { font: { size: 14 } },
+                            min: 0,
+                            max: 5,
+                            ticks: {
+                                stepSize: 1,
+                                backdropColor: 'transparent'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+        }
+        
+        function setupNavigation() {
+            const navLinksContainer = document.getElementById('nav-links');
+            const navOrder = ['introduction', 'frontend', 'backend', 'database', 'background_tasks', 'ai_development', 'summary'];
+            
+            navOrder.forEach(key => {
+                const data = techStackData[key];
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    <a href="#" data-key="${key}" class="nav-link flex items-center px-4 py-2.5 text-slate-300 rounded-md hover:bg-slate-700 transition-colors duration-200">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 mr-3 text-slate-400">
+                           ${data.icon}
+                        </svg>
+                        <span>${data.title}</span>
+                    </a>
+                `;
+                navLinksContainer.appendChild(li);
+            });
+
+            navLinksContainer.addEventListener('click', (e) => {
+                e.preventDefault();
+                const link = e.target.closest('.nav-link');
+                if (link) {
+                    const key = link.dataset.key;
+                    updateActiveLink(link);
+                    renderContent(key);
+                }
+            });
+        }
+        
+        function updateActiveLink(activeLink) {
+             document.querySelectorAll('.nav-link').forEach(link => link.classList.remove('active'));
+             activeLink.classList.add('active');
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            setupNavigation();
+            const firstLink = document.querySelector('.nav-link');
+            firstLink.classList.add('active');
+            renderContent('introduction');
+        });
+
+    </script>
+</body>
+</html>
