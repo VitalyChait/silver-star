@@ -2,6 +2,17 @@
 
 This module provides text-to-speech functionality for the Silver Star chatbot, allowing users to have a full conversation without looking at the screen.
 
+## Location
+
+The audio functionality is located in the `audio/` subdirectory of the LLM module:
+
+```
+llm/audio/
+├── __init__.py              # Package exports
+├── voice.py                 # Speech-to-text and text-to-speech
+└── audio_player.py          # Audio playback functionality
+```
+
 ## Features
 
 - Converts chatbot text responses to speech
@@ -14,15 +25,15 @@ This module provides text-to-speech functionality for the Silver Star chatbot, a
 To use the audio functionality, you'll need to install the following dependencies:
 
 ```bash
-# For audio playback
-pip install pygame
-
-# For local text-to-speech (fallback)
-pip install pyttsx3
-
-# For Google Cloud Text-to-Speech (optional)
-pip install google-cloud-texttospeech
+# All dependencies are included in the main requirements.txt file
+cd backend/server
+pip install -r requirements.txt
 ```
+
+The audio-specific dependencies are:
+- **pygame**: Required for audio playback
+- **pyttsx3**: Local text-to-speech engine (fallback)
+- **google-cloud-texttospeech**: Google Cloud Text-to-Speech (optional)
 
 ## Usage
 
@@ -41,7 +52,7 @@ response, candidate_info = await chatbot.process_message("Hi, I'm looking for a 
 ### Direct Audio Playback
 
 ```python
-from llm import AudioPlayer
+from llm.audio import AudioPlayer
 
 # Create an audio player instance
 player = AudioPlayer()
@@ -53,7 +64,7 @@ await player.play_text("Hello, this is a test message")
 ### Voice Service
 
 ```python
-from llm import VoiceService
+from llm.audio import VoiceService
 
 # Create a voice service instance
 voice_service = VoiceService()
@@ -83,3 +94,9 @@ The audio functionality uses the existing `.llm_config` file for Google Cloud Te
 1. **Audio not playing**: Make sure pygame is installed and your system has audio capabilities
 2. **Text-to-speech not working**: Check that either Google Cloud credentials are configured or pyttsx3 is installed
 3. **Import errors**: Ensure all dependencies are properly installed
+
+## Examples
+
+See the `examples/` directory for example scripts:
+- `example_audio.py`: Demonstrates direct audio playback
+- `test_audio_chatbot.py`: Shows how to use the audio-enabled chatbot

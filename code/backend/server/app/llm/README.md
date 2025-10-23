@@ -2,40 +2,51 @@
 
 This module provides LLM-powered chatbot functionality for the Silver Star job recruitment platform.
 
+## Directory Structure
+
+```
+llm/
+├── __init__.py              # Main module exports
+├── README.md                # This file
+├── README_AUDIO.md          # Audio functionality documentation
+├── .llm_config              # Configuration file (create from llm_config_example)
+├── llm_config_example       # Example configuration file
+├── core/                    # Core functionality
+│   ├── __init__.py
+│   ├── config.py            # Configuration management
+│   └── service.py           # LLM service wrapper
+├── chatbot/                 # Chatbot functionality
+│   ├── __init__.py
+│   ├── chatbot.py           # Main chatbot implementation
+│   ├── recommendations.py   # Job recommendation service
+│   └── validation.py        # Answer validation service
+├── audio/                   # Audio functionality
+│   ├── __init__.py
+│   ├── voice.py             # Speech-to-text and text-to-speech
+│   └── audio_player.py      # Audio playback functionality
+├── examples/                # Example scripts
+│   ├── __init__.py
+│   ├── example_audio.py     # Audio player example
+│   └── test_audio_chatbot.py # Audio-enabled chatbot test
+└── tests/                   # Test scripts
+    ├── __init__.py
+    └── test_chatbot.py      # Chatbot functionality test
+```
+
 ## Components
 
-### 1. Configuration (`config.py`)
-- Handles configuration for LLM services
-- Reads from `.llm_config` file for API keys and settings
-- Supports both Google Gemini AI Studio and Vertex AI providers
+### 1. Core (`core/`)
+- **Configuration (`config.py`)**: Handles configuration for LLM services, reads from `.llm_config` file
+- **LLM Service (`service.py`)**: Provides a wrapper around Google's Gemini API
 
-### 2. LLM Service (`service.py`)
-- Provides a wrapper around Google's Gemini API
-- Handles text generation and structured data extraction
-- Manages conversation history and context
+### 2. Chatbot (`chatbot/`)
+- **Chatbot (`chatbot.py`)**: Implements the conversation flow for gathering candidate information
+- **Job Recommendations (`recommendations.py`)**: Generates personalized job recommendations
+- **Validation (`validation.py`)**: Validates user answers to chatbot questions
 
-### 3. Voice Service (`voice.py`)
-- Provides speech-to-text and text-to-speech capabilities
-- Uses Google Cloud Speech-to-Text and Text-to-Speech APIs
-- Handles audio encoding/decoding
-- Includes fallback to local text-to-speech (pyttsx3)
-
-### 4. Audio Player (`audio_player.py`)
-- Converts chatbot text responses to speech and plays them directly
-- Enables users to have conversations without looking at the screen
-- Supports both Google Cloud Text-to-Speech and local fallback
-- Uses pygame for audio playback
-
-### 5. Chatbot (`chatbot.py`)
-- Implements the conversation flow for gathering candidate information
-- Collects: name, location, what they're looking for, skills, availability
-- Provides job recommendations based on candidate profile
-- Supports optional audio playback of responses
-
-### 6. Job Recommendations (`recommendations.py`)
-- Generates personalized job recommendations using LLM
-- Matches candidates with jobs based on skills, location, and preferences
-- Provides match scores and reasoning for recommendations
+### 3. Audio (`audio/`)
+- **Voice Service (`voice.py`)**: Provides speech-to-text and text-to-speech capabilities
+- **Audio Player (`audio_player.py`)**: Converts chatbot text responses to speech and plays them
 
 ## API Endpoints
 
@@ -67,7 +78,7 @@ POST /api/chatbot/reset
 
 ## Configuration
 
-Create a `.llm_config` file in the `backend/llm/` directory with the following format:
+Create a `.llm_config` file in the `backend/server/app/llm/` directory with the following format:
 
 ```
 # Required: Gemini API Configuration
@@ -100,15 +111,14 @@ The following Python packages are required:
 - `pygame`: Required for audio playback
 - `pyttsx3`: Local text-to-speech engine (fallback)
 
+All dependencies are listed in the main `requirements.txt` file in the server directory.
+
 ## Usage
 
 1. Install the required dependencies:
    ```bash
-   # Core dependencies
+   cd backend/server
    pip install -r requirements.txt
-   
-   # Audio functionality
-   pip install -r requirements_audio.txt
    ```
 
 2. Configure your API keys in the `.llm_config` file

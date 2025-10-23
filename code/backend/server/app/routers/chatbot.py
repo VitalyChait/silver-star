@@ -19,7 +19,7 @@ sys.path.insert(0, str(llm_path))
 
 try:
     from ..llm import CandidateChatbot
-    from ..llm.voice import voice_service
+    from ..llm.audio.voice import voice_service
     chatbot_available = True
 except ImportError as e:
     print(f"Warning: Could not import chatbot module: {e}", file=sys.stderr)

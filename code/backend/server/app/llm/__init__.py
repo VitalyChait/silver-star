@@ -19,11 +19,9 @@ sys.excepthook = handle_exception
 # Try to import the components, but don't exit if dependencies are missing
 # This allows the module to be imported for testing purposes
 try:
-    from .config import LLMConfig
-    from .service import LLMService
+    from .core import LLMConfig, LLMService
     from .chatbot import CandidateChatbot
-    from .voice import VoiceService
-    from .audio_player import AudioPlayer
+    from .audio import VoiceService, AudioPlayer
     
     __all__ = ["LLMConfig", "LLMService", "CandidateChatbot", "VoiceService", "AudioPlayer"]
 except ImportError as e:
