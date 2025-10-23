@@ -1,6 +1,7 @@
 # silver-star
 
-<img width="1088" height="960" alt="feature_graphic_1024x500" src="https://github.com/user-attachments/assests/image/silver_star_logo.png" />
+<img width="1088" height="960" alt="silver_star_logo" src="https://github.com/user-attachments/assets/1961ad11-1dee-4fc5-941d-17306c309d38" />
+
 
 This repo contains the Silver Star MVP: a simple FastAPI backend and a Next.js frontend for a job board connecting senior professionals with meaningful work.
 
