@@ -38,7 +38,7 @@ Determine what will make your service stand out.
 
 This phase covers the technical architecture and the creation of a Minimum Viable Product (MVP).
 
-### Step 2.1: Plan Your Technical Stack - @Vitaly & @Cindy1`
+### Step 2.1: Plan Your Technical Stack - @Vitaly & @Cindy
 
 * **Platform decision:** Stack decision - what are you comfortable coding with and vibe coding advantages (example: React > Flutter for AI agnets) - Ref: ./non-code/arch/stack/
 * **Database design:** Set up a database to store job listings, user information, and other site data. This will include fields for job titles, descriptions, requirements, company details, and location. Consider score/cred ranking system. - Ref: ./non-code/arch/db

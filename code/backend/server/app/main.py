@@ -1,0 +1,67 @@
+import sys
+import os
+
+# Set up global error handling to terminate fast on errors
+def handle_exception(exc_type, exc_value, exc_traceback):
+    """Global exception handler to terminate fast on errors."""
+    import traceback
+    print(f"Fatal error: {exc_type.__name__}: {exc_value}", file=sys.stderr)
+    print("".join(traceback.format_exception(exc_type, exc_value, exc_traceback)), file=sys.stderr)
+    sys.exit(1)
+
+# Install the global exception handler
+sys.excepthook = handle_exception
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from .config import settings
+from .db import engine, Base
+from .routers import jobs, auth
+
+# Try to import the chatbot router, but don't fail if it can't be imported
+try:
+    from .routers import chatbot
+    chatbot_available = True
+    print("Chatbot module loaded successfully")
+except ImportError as e:
+    print(f"Warning: Could not import chatbot module: {e}", file=sys.stderr)
+    print("Chatbot functionality will not be available.", file=sys.stderr)
+    chatbot_available = False
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(title=settings.app_name)
+
+    # CORS for local dev
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[settings.frontend_origin, "http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Ensure tables exist (MVP)
+    Base.metadata.create_all(bind=engine)
+
+    # Routers
+    app.include_router(auth.router)
+    app.include_router(jobs.router)
+    
+    # Only include the chatbot router if it was successfully imported
+    if chatbot_available:
+        app.include_router(chatbot.router)
+
+    @app.get("/health")
+    def health():
+        return {"status": "ok"}
+
+    @app.get("/")
+    def root():
+        return {"name": settings.app_name}
+
+    return app
+
+
+app = create_app()
