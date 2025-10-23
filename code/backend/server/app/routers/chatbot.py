@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import logging
 from typing import Dict, Any, Optional
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
@@ -41,7 +42,7 @@ except ImportError as e:
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/chatbot", tags=["chatbot"])
+router = APIRouter(prefix="/api/chatbot", tags=["chatbot"])
 
 # In-memory storage for chatbot instances (in production, use Redis or database)
 chatbot_sessions: Dict[str, CandidateChatbot] = {}
@@ -73,8 +74,7 @@ class VoiceResponse(BaseModel):
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_bot(
     message: ChatMessage,
-    db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_user)
+    db: Session = Depends(get_db)
 ):
     """
     Send a text message to the chatbot and get a response.
@@ -84,7 +84,7 @@ async def chat_with_bot(
     
     try:
         # Get or create chatbot instance for this conversation
-        conversation_id = message.conversation_id or f"user_{current_user['id']}"
+        conversation_id = message.conversation_id or f"anon_{datetime.now().timestamp()}"
         
         if conversation_id not in chatbot_sessions:
             chatbot_sessions[conversation_id] = CandidateChatbot()
@@ -111,8 +111,7 @@ async def chat_with_bot(
 @router.post("/voice", response_model=VoiceResponse)
 async def voice_chat_with_bot(
     request: VoiceRequest,
-    db: Session = Depends(get_db),
-    current_user: Dict = Depends(get_current_user)
+    db: Session = Depends(get_db)
 ):
     """
     Send a voice message to the chatbot and get a text and voice response.
@@ -122,7 +121,7 @@ async def voice_chat_with_bot(
     
     try:
         # Get or create chatbot instance for this conversation
-        conversation_id = request.conversation_id or f"user_{current_user['id']}"
+        conversation_id = request.conversation_id or f"anon_{datetime.now().timestamp()}"
         
         if conversation_id not in chatbot_sessions:
             chatbot_sessions[conversation_id] = CandidateChatbot()
@@ -155,8 +154,7 @@ async def voice_chat_with_bot(
 
 @router.post("/reset")
 async def reset_chatbot(
-    conversation_id: Optional[str] = None,
-    current_user: Dict = Depends(get_current_user)
+    conversation_id: Optional[str] = None
 ):
     """
     Reset the chatbot conversation state.
@@ -165,7 +163,7 @@ async def reset_chatbot(
         raise HTTPException(status_code=503, detail="Chatbot functionality is not available")
     
     try:
-        conversation_id = conversation_id or f"user_{current_user['id']}"
+        conversation_id = conversation_id or f"anon_{datetime.now().timestamp()}"
         
         if conversation_id in chatbot_sessions:
             chatbot_sessions[conversation_id].reset_conversation()
