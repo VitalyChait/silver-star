@@ -43,8 +43,16 @@ export default function ChatbotPage() {
     const id = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     setConversationId(id);
     
-    // Send initial greeting message
-    handleSendMessage("Hello");
+    // Add initial bot greeting message directly instead of sending "Hi" and getting a response
+    const botGreeting: Message = {
+      id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_bot`,
+      text: "Hello there! Welcome to Silver Star. I'm your job recruitment assistant. To get started, could you please tell me your name?",
+      sender: "bot",
+      timestamp: new Date(),
+    };
+    
+    setMessages([botGreeting]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSendMessage = async (text: string) => {
@@ -240,8 +248,15 @@ export default function ChatbotPage() {
       const id = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       setConversationId(id);
       
-      // Send initial greeting message
-      handleSendMessage("Hello");
+      // Add initial bot greeting message directly instead of sending "Hi" and getting a response
+      const botGreeting: Message = {
+        id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_bot`,
+        text: "Hello there! Welcome to Silver Star. I'm your job recruitment assistant. To get started, could you please tell me your name?",
+        sender: "bot",
+        timestamp: new Date(),
+      };
+      
+      setMessages([botGreeting]);
     } catch (e: any) {
       setError(e.message || "Error resetting conversation");
     }

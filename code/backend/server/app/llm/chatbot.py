@@ -1,9 +1,12 @@
 import json
 import logging
 from typing import Dict, List, Optional, Tuple, Any
+import re
 
 from .service import llm_service
 from .recommendations import job_recommendation_service
+from .validation import answer_validator
+from .audio_player import audio_player
 
 logger = logging.getLogger(__name__)
 
@@ -11,8 +14,13 @@ logger = logging.getLogger(__name__)
 class CandidateChatbot:
     """Chatbot for gathering candidate information and recommending jobs."""
     
-    def __init__(self):
-        """Initialize the chatbot."""
+    def __init__(self, enable_audio: bool = False):
+        """
+        Initialize the chatbot.
+        
+        Args:
+            enable_audio: Whether to enable audio playback of responses
+        """
         self.conversation_state = "greeting"
         self.candidate_info = {
             "name": None,
@@ -23,6 +31,9 @@ class CandidateChatbot:
         }
         self.conversation_history = []
         self.db_session = None  # Will be set when processing messages
+        self.last_question = None  # Track the last question asked
+        self.last_question_type = None  # Track the type of the last question
+        self.enable_audio = enable_audio  # Whether to play audio responses
     
     async def process_message(
         self, 
@@ -47,6 +58,38 @@ class CandidateChatbot:
         # Add user message to history
         self.conversation_history.append({"role": "user", "content": message})
         
+        # If we asked a question in the previous turn, validate the answer
+        if self.last_question and self.last_question_type:
+            validation_result = await answer_validator.validate_answer(
+                self.last_question,
+                message,
+                self.last_question_type,
+                self.conversation_history
+            )
+            
+            # If the answer is not valid, ask the question again
+            if not validation_result.get("is_valid", False):
+                prompt = f"""
+                You are a job recruitment assistant for Silver Star.
+                The user didn't answer your question properly.
+                Ask them the same question again in a different way.
+                Do not mention being an AI or assistant.
+                Your previous question was: "{self.last_question}"
+                """
+                
+                response = await llm_service.generate_response(prompt)
+                self.conversation_history.append({"role": "assistant", "content": response})
+                
+                # Play the response as audio if enabled
+                if self.enable_audio:
+                    await self._play_response_audio(response)
+                
+                # Update the last question
+                self.last_question = response
+                # Keep the same question type
+                
+                return response, self.candidate_info
+        
         # Process based on current conversation state
         if self.conversation_state == "greeting":
             response = await self._handle_greeting()
@@ -68,27 +111,92 @@ class CandidateChatbot:
         # Add bot response to history
         self.conversation_history.append({"role": "assistant", "content": response})
         
+        # Play the response as audio if enabled
+        if self.enable_audio:
+            await self._play_response_audio(response)
+        
         return response, self.candidate_info
+    
+    async def _play_response_audio(self, response: str) -> None:
+        """
+        Play the response as audio.
+        
+        Args:
+            response: The text response to play as audio
+        """
+        try:
+            await audio_player.play_text(response)
+        except Exception as e:
+            logger.error(f"Error playing audio response: {str(e)}")
     
     async def _handle_greeting(self) -> str:
         """Handle the initial greeting."""
         self.conversation_state = "collecting_name"
         
         prompt = """
-        You are a friendly job recruitment assistant for Silver Star. 
+        You are a job recruitment assistant for Silver Star. 
         Greet the candidate and ask for their name to get started.
-        Keep it brief and welcoming.
+        Keep it brief and professional. Do not mention being an AI or assistant.
         """
         
-        return await llm_service.generate_response(prompt)
+        response = await llm_service.generate_response(prompt)
+        self.last_question = response
+        self.last_question_type = "name"
+        return response
     
     async def _extract_name(self, message: str) -> str:
         """Extract the candidate's name from their message."""
+        # First, try a simple pattern match for common name introductions
+        import re
+        
+        # Check for patterns like "My name is X", "I'm X", "I am X", "Call me X"
+        # Also handle just the name by itself
+        patterns = [
+            r"(?:my name is|i'm|i am|call me)\s+([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)",
+            r"^(?:hi|hello|hey)[,\s]*([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)",
+            r"^([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)$",  # Just a name by itself
+        ]
+        
+        extracted_name = None
+        for pattern in patterns:
+            match = re.search(pattern, message, re.IGNORECASE)
+            if match:
+                extracted_name = match.group(1).strip()
+                # Basic validation - should be 2-30 characters and contain at least one vowel
+                if 2 <= len(extracted_name) <= 30 and re.search(r'[aeiouAEIOU]', extracted_name):
+                    break
+                else:
+                    extracted_name = None
+        
+        if extracted_name:
+            self.candidate_info["name"] = extracted_name
+            self.conversation_state = "collecting_location"
+            
+            prompt = f"""
+            You are a job recruitment assistant for Silver Star. A candidate named {extracted_name} has just introduced themselves.
+            Respond in a friendly, professional manner and ask for their location.
+            Do not mention being an AI or assistant. Just be a helpful recruiter.
+            """
+            
+            response = await llm_service.generate_response(prompt)
+            self.last_question = response
+            self.last_question_type = "location"
+            return response
+        
+        # If pattern matching fails, try LLM extraction with clearer instructions
         schema = {"name": "string"}
         
         try:
+            # Create a more specific extraction prompt
+            extraction_prompt = f"""
+            Extract the person's name from this message: "{message}"
+            The person is introducing themselves to a job recruiter.
+            Only extract their name, nothing else.
+            If there's no clear name, respond with null.
+            """
+            
             extracted = await llm_service.extract_structured_data(
-                message, schema, self.conversation_history
+                extraction_prompt, schema, self.conversation_history
             )
             
             if extracted.get("name"):
@@ -96,25 +204,39 @@ class CandidateChatbot:
                 self.conversation_state = "collecting_location"
                 
                 prompt = f"""
-                Thanks, {extracted['name']}! Now I need to know your location. 
-                Could you please tell me where you're located?
+                You are a job recruitment assistant for Silver Star. A candidate named {extracted['name']} has just introduced themselves.
+                Respond in a friendly, professional manner and ask for their location.
+                Do not mention being an AI or assistant. Just be a helpful recruiter.
                 """
                 
-                return await llm_service.generate_response(prompt)
+                response = await llm_service.generate_response(prompt)
+                self.last_question = response
+                self.last_question_type = "location"
+                return response
             else:
                 prompt = """
-                I didn't catch your name. Could you please tell me your name?
+                You are a job recruitment assistant for Silver Star.
+                I didn't catch the person's name. Ask them to tell you their name in a friendly way.
+                Do not mention being an AI or assistant.
                 """
                 
-                return await llm_service.generate_response(prompt)
+                response = await llm_service.generate_response(prompt)
+                self.last_question = response
+                self.last_question_type = "name"
+                return response
         except Exception as e:
             logger.error(f"Error extracting name: {str(e)}")
             
             prompt = """
+            You are a job recruitment assistant for Silver Star.
             I'm having trouble understanding. Could you please tell me your name?
+            Do not mention being an AI or assistant.
             """
             
-            return await llm_service.generate_response(prompt)
+            response = await llm_service.generate_response(prompt)
+            self.last_question = response
+            self.last_question_type = "name"
+            return response
     
     async def _extract_location(self, message: str) -> str:
         """Extract the candidate's location from their message."""
@@ -134,13 +256,19 @@ class CandidateChatbot:
                 Please describe the type of position, industry, or role you're interested in.
                 """
                 
-                return await llm_service.generate_response(prompt)
+                response = await llm_service.generate_response(prompt)
+                self.last_question = response
+                self.last_question_type = "looking_for"
+                return response
             else:
                 prompt = """
                 I didn't catch your location. Could you please tell me where you're located?
                 """
                 
-                return await llm_service.generate_response(prompt)
+                response = await llm_service.generate_response(prompt)
+                self.last_question = response
+                self.last_question_type = "location"
+                return response
         except Exception as e:
             logger.error(f"Error extracting location: {str(e)}")
             
@@ -148,7 +276,10 @@ class CandidateChatbot:
             I'm having trouble understanding. Could you please tell me your location?
             """
             
-            return await llm_service.generate_response(prompt)
+            response = await llm_service.generate_response(prompt)
+            self.last_question = response
+            self.last_question_type = "location"
+            return response
     
     async def _extract_looking_for(self, message: str) -> str:
         """Extract what the candidate is looking for from their message."""
@@ -168,13 +299,19 @@ class CandidateChatbot:
                 What can you do well? Please include any relevant skills, certifications, or experience.
                 """
                 
-                return await llm_service.generate_response(prompt)
+                response = await llm_service.generate_response(prompt)
+                self.last_question = response
+                self.last_question_type = "skills"
+                return response
             else:
                 prompt = """
                 I didn't quite understand what you're looking for. Could you please describe the type of job or position you're interested in?
                 """
                 
-                return await llm_service.generate_response(prompt)
+                response = await llm_service.generate_response(prompt)
+                self.last_question = response
+                self.last_question_type = "looking_for"
+                return response
         except Exception as e:
             logger.error(f"Error extracting what they're looking for: {str(e)}")
             
@@ -182,7 +319,10 @@ class CandidateChatbot:
             I'm having trouble understanding. Could you please describe what type of job you're looking for?
             """
             
-            return await llm_service.generate_response(prompt)
+            response = await llm_service.generate_response(prompt)
+            self.last_question = response
+            self.last_question_type = "looking_for"
+            return response
     
     async def _extract_skills(self, message: str) -> str:
         """Extract the candidate's skills from their message."""
@@ -202,13 +342,19 @@ class CandidateChatbot:
                 Please let me know your availability (immediately, specific date, etc.).
                 """
                 
-                return await llm_service.generate_response(prompt)
+                response = await llm_service.generate_response(prompt)
+                self.last_question = response
+                self.last_question_type = "availability"
+                return response
             else:
                 prompt = """
                 I didn't catch your skills. Could you please tell me about your skills and experience?
                 """
                 
-                return await llm_service.generate_response(prompt)
+                response = await llm_service.generate_response(prompt)
+                self.last_question = response
+                self.last_question_type = "skills"
+                return response
         except Exception as e:
             logger.error(f"Error extracting skills: {str(e)}")
             
@@ -216,7 +362,10 @@ class CandidateChatbot:
             I'm having trouble understanding. Could you please tell me about your skills and experience?
             """
             
-            return await llm_service.generate_response(prompt)
+            response = await llm_service.generate_response(prompt)
+            self.last_question = response
+            self.last_question_type = "skills"
+            return response
     
     async def _extract_availability(self, message: str) -> str:
         """Extract the candidate's availability from their message."""
@@ -238,7 +387,10 @@ class CandidateChatbot:
                 I didn't catch your availability. Could you please tell me when you're available to start work?
                 """
                 
-                return await llm_service.generate_response(prompt)
+                response = await llm_service.generate_response(prompt)
+                self.last_question = response
+                self.last_question_type = "availability"
+                return response
         except Exception as e:
             logger.error(f"Error extracting availability: {str(e)}")
             
@@ -246,7 +398,10 @@ class CandidateChatbot:
             I'm having trouble understanding. Could you please tell me when you're available to start work?
             """
             
-            return await llm_service.generate_response(prompt)
+            response = await llm_service.generate_response(prompt)
+            self.last_question = response
+            self.last_question_type = "availability"
+            return response
     
     async def _recommend_jobs(self) -> str:
         """Generate job recommendations based on candidate information."""
@@ -331,3 +486,5 @@ class CandidateChatbot:
         }
         self.conversation_history = []
         self.db_session = None
+        self.last_question = None
+        self.last_question_type = None

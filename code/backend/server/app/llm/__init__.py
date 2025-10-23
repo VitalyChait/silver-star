@@ -22,8 +22,10 @@ try:
     from .config import LLMConfig
     from .service import LLMService
     from .chatbot import CandidateChatbot
+    from .voice import VoiceService
+    from .audio_player import AudioPlayer
     
-    __all__ = ["LLMConfig", "LLMService", "CandidateChatbot"]
+    __all__ = ["LLMConfig", "LLMService", "CandidateChatbot", "VoiceService", "AudioPlayer"]
 except ImportError as e:
     print(f"Warning: Could not import LLM module components: {e}", file=sys.stderr)
     print("This may be due to missing dependencies. The chatbot functionality will not be available.", file=sys.stderr)
@@ -41,4 +43,12 @@ except ImportError as e:
         def __init__(self):
             raise ImportError("LLM dependencies not installed")
     
-    __all__ = ["LLMConfig", "LLMService", "CandidateChatbot"]
+    class VoiceService:
+        def __init__(self):
+            raise ImportError("LLM dependencies not installed")
+    
+    class AudioPlayer:
+        def __init__(self):
+            raise ImportError("LLM dependencies not installed")
+    
+    __all__ = ["LLMConfig", "LLMService", "CandidateChatbot", "VoiceService", "AudioPlayer"]
