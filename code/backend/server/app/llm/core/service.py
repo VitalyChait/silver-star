@@ -92,10 +92,16 @@ class LLMService:
                     }
                 )
             
+            # Check if the response was filtered
+            if response.candidates[0].finish_reason.name == "SAFETY":
+                logger.warning("Response was filtered for safety reasons")
+                return "I apologize, but I cannot provide a response to that request due to safety guidelines."
+            
             return response.text
         except Exception as e:
             logger.error(f"Error generating response: {str(e)}")
-            raise
+            # Return a fallback response instead of raising an exception
+            return "I'm having trouble generating a response right now. Could you please try again?"
     
     async def extract_structured_data(
         self, 
