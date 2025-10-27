@@ -58,6 +58,7 @@ class CandidateChatbot:
         # Add user message to history
         self.conversation_history.append({"role": "user", "content": message})
         
+        validated_value = None
         # If we asked a question in the previous turn, validate the answer
         if self.last_question and self.last_question_type:
             validation_result = await answer_validator.validate_answer(
@@ -68,7 +69,11 @@ class CandidateChatbot:
             )
             
             # If the answer is not valid, ask the question again
-            if not validation_result.get("is_valid", False):
+            if validation_result.get("is_valid", False):
+                validated_value = validation_result.get("extracted_value")
+                if isinstance(validated_value, str):
+                    validated_value = validated_value.strip()
+            else:
                 prompt = f"""
                 You are a job recruitment assistant for Silver Star.
                 The user didn't answer your question properly.
@@ -94,15 +99,15 @@ class CandidateChatbot:
         if self.conversation_state == "greeting":
             response = await self._handle_greeting()
         elif self.conversation_state == "collecting_name":
-            response = await self._extract_name(message)
+            response = await self._extract_name(message, validated_value)
         elif self.conversation_state == "collecting_location":
-            response = await self._extract_location(message)
+            response = await self._extract_location(message, validated_value)
         elif self.conversation_state == "collecting_looking_for":
-            response = await self._extract_looking_for(message)
+            response = await self._extract_looking_for(message, validated_value)
         elif self.conversation_state == "collecting_skills":
-            response = await self._extract_skills(message)
+            response = await self._extract_skills(message, validated_value)
         elif self.conversation_state == "collecting_availability":
-            response = await self._extract_availability(message)
+            response = await self._extract_availability(message, validated_value)
         elif self.conversation_state == "recommending_jobs":
             response = await self._recommend_jobs()
         else:
@@ -144,29 +149,34 @@ class CandidateChatbot:
         self.last_question_type = "name"
         return response
     
-    async def _extract_name(self, message: str) -> str:
+    async def _extract_name(self, message: str, validated_value: Optional[str] = None) -> str:
         """Extract the candidate's name from their message."""
         # First, try a simple pattern match for common name introductions
-        import re
+        
+        extracted_name = None
+        if validated_value:
+            extracted_name = re.sub(r"[^A-Za-z\s'-]", "", validated_value).strip()
+            extracted_name = re.sub(r"\s+", " ", extracted_name)
+            if extracted_name:
+                extracted_name = extracted_name.title()
         
         # Check for patterns like "My name is X", "I'm X", "I am X", "Call me X"
         # Also handle just the name by itself
-        patterns = [
-            r"(?:my name is|i'm|i am|call me)\s+([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)",
-            r"^(?:hi|hello|hey)[,\s]*([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)",
-            r"^([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)$",  # Just a name by itself
-        ]
-        
-        extracted_name = None
-        for pattern in patterns:
-            match = re.search(pattern, message, re.IGNORECASE)
-            if match:
-                extracted_name = match.group(1).strip()
-                # Basic validation - should be 2-30 characters
-                if 2 <= len(extracted_name) <= 30:
-                    break
-                else:
-                    extracted_name = None
+        if not extracted_name:
+            patterns = [
+                r"(?:my name is|i'm|i am|call me)\s+([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)",
+                r"^(?:hi|hello|hey)[,\s]*(?:i'm|i am)?\s*([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)",
+                r"^([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)$",  # Just a name by itself
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, message, re.IGNORECASE)
+                if match:
+                    candidate_name = match.group(1).strip(" ,.!?")
+                    # Basic validation - should be 2-60 characters
+                    if 2 <= len(candidate_name) <= 60:
+                        extracted_name = re.sub(r"\s+", " ", candidate_name).title()
+                        break
         
         if extracted_name:
             self.candidate_info["name"] = extracted_name
@@ -238,17 +248,50 @@ class CandidateChatbot:
             self.last_question_type = "name"
             return response
     
-    async def _extract_location(self, message: str) -> str:
+    async def _extract_location(self, message: str, validated_value: Optional[str] = None) -> str:
         """Extract the candidate's location from their message."""
         schema = {"location": "string"}
+        location = None
+        
+        if validated_value:
+            location = validated_value.strip(" .,!")
+        
+        if not location:
+            patterns = [
+                r"(?:i(?:'m| am)?|i live|i reside|i work|i'm based|i am based|i'm located|i am located|based|located)\s+(?:in|at|near|around)\s+([A-Za-z0-9 ,'-]+)",
+                r"(?:from)\s+([A-Za-z0-9 ,'-]+)",
+                r"^(?:in\s+)?([A-Za-z0-9 ,'-]+)$",
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, message, re.IGNORECASE)
+                if match:
+                    candidate_location = match.group(1).strip(" .,!")
+                    if 2 <= len(candidate_location) <= 100:
+                        location = re.sub(r"\s+", " ", candidate_location)
+                        break
         
         try:
-            extracted = await llm_service.extract_structured_data(
-                message, schema, self.conversation_history
-            )
+            if not location:
+                extraction_prompt = f"""
+                Extract the candidate's location from the following message. The location may be a city, state, or country.
+                Provide the location as a single concise string without additional commentary.
+                If no location is mentioned, respond with null.
+                
+                Message: "{message}"
+                
+                Respond with JSON like {{"location": "San Francisco, CA"}} or {{"location": null}}.
+                """
+                
+                extracted = await llm_service.extract_structured_data(
+                    extraction_prompt, schema, self.conversation_history
+                )
+                
+                if extracted.get("location"):
+                    location = extracted["location"].strip(" .,!")
             
-            if extracted.get("location"):
-                self.candidate_info["location"] = extracted["location"]
+            if location:
+                self.candidate_info["location"] = location
                 self.conversation_state = "collecting_looking_for"
                 
                 prompt = f"""
@@ -281,17 +324,20 @@ class CandidateChatbot:
             self.last_question_type = "location"
             return response
     
-    async def _extract_looking_for(self, message: str) -> str:
+    async def _extract_looking_for(self, message: str, validated_value: Optional[str] = None) -> str:
         """Extract what the candidate is looking for from their message."""
         schema = {"looking_for": "string"}
+        looking_for = validated_value.strip() if isinstance(validated_value, str) and validated_value.strip() else None
         
         try:
-            extracted = await llm_service.extract_structured_data(
-                message, schema, self.conversation_history
-            )
+            if not looking_for:
+                extracted = await llm_service.extract_structured_data(
+                    message, schema, self.conversation_history
+                )
+                looking_for = extracted.get("looking_for") if extracted else None
             
-            if extracted.get("looking_for"):
-                self.candidate_info["looking_for"] = extracted["looking_for"]
+            if looking_for:
+                self.candidate_info["looking_for"] = looking_for
                 self.conversation_state = "collecting_skills"
                 
                 prompt = f"""
@@ -324,17 +370,20 @@ class CandidateChatbot:
             self.last_question_type = "looking_for"
             return response
     
-    async def _extract_skills(self, message: str) -> str:
+    async def _extract_skills(self, message: str, validated_value: Optional[str] = None) -> str:
         """Extract the candidate's skills from their message."""
         schema = {"skills": "string"}
+        skills = validated_value.strip() if isinstance(validated_value, str) and validated_value.strip() else None
         
         try:
-            extracted = await llm_service.extract_structured_data(
-                message, schema, self.conversation_history
-            )
+            if not skills:
+                extracted = await llm_service.extract_structured_data(
+                    message, schema, self.conversation_history
+                )
+                skills = extracted.get("skills") if extracted else None
             
-            if extracted.get("skills"):
-                self.candidate_info["skills"] = extracted["skills"]
+            if skills:
+                self.candidate_info["skills"] = skills
                 self.conversation_state = "collecting_availability"
                 
                 prompt = f"""
@@ -367,17 +416,20 @@ class CandidateChatbot:
             self.last_question_type = "skills"
             return response
     
-    async def _extract_availability(self, message: str) -> str:
+    async def _extract_availability(self, message: str, validated_value: Optional[str] = None) -> str:
         """Extract the candidate's availability from their message."""
         schema = {"availability": "string"}
+        availability = validated_value.strip() if isinstance(validated_value, str) and validated_value.strip() else None
         
         try:
-            extracted = await llm_service.extract_structured_data(
-                message, schema, self.conversation_history
-            )
+            if not availability:
+                extracted = await llm_service.extract_structured_data(
+                    message, schema, self.conversation_history
+                )
+                availability = extracted.get("availability") if extracted else None
             
-            if extracted.get("availability"):
-                self.candidate_info["availability"] = extracted["availability"]
+            if availability:
+                self.candidate_info["availability"] = availability
                 self.conversation_state = "recommending_jobs"
                 
                 # Move to job recommendations

@@ -6,8 +6,8 @@ DEFAULT_FRONTEND_PORT=3000
 DEFAULT_BACKEND_PORT=8000
 
 # Get current ports or use defaults
-FRONTEND_PORT=$(cat "$SCRIPT_DIR/logs/.frontend_port" 2>/dev/null || echo "$DEFAULT_FRONTEND_PORT")
-BACKEND_PORT=$(cat "$SCRIPT_DIR/logs/.backend_port" 2>/dev/null || echo "$DEFAULT_BACKEND_PORT")
+FRONTEND_PORT=$(cat "$SCRIPT_DIR/logs/.frontend_port.log" 2>/dev/null || echo "$DEFAULT_FRONTEND_PORT")
+BACKEND_PORT=$(cat "$SCRIPT_DIR/logs/.backend_port.log" 2>/dev/null || echo "$DEFAULT_BACKEND_PORT")
 
 echo "Silver Star Application Status"
 echo "=============================="

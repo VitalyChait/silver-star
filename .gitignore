@@ -38,6 +38,7 @@ venv/
 ENV/
 env/
 code/backend/venv/
+uv.lock
 
 # Env and secrets
 .env
