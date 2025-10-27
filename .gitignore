@@ -1,0 +1,97 @@
+# --- OS / Editor ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.so
+.Python
+
+# Build artifacts
+build/
+dist/
+downloads/
+eggs/
+*.egg-info/
+.eggs/
+.installed.cfg
+develop-eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+code/backend/venv/
+
+# Env and secrets
+.env
+*.env
+code/backend/app/llm/.llm_config
+code/backend/app/llm/.llm_cache
+code/backend/app/llm/.credentials
+code/backend/app/llm/credentials.json
+secret_credentials.json
+*.pem
+*.key
+*.p12
+
+# Databases and local storage
+*.sqlite3
+*.sqlite
+data.db
+code/backend/data.db
+*.db
+
+# Logs
+logs/
+*.log
+
+# Testing / tooling caches
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.cache/
+.pytest_cache/
+.mypy_cache/
+.pyre/
+.dmypy.json
+.pytype/
+coverage/
+.nyc_output/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Node (if used later)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.yarn-integrity
+*.tgz
+.npm
+.eslintcache
+jspm_packages/
+.parcel-cache
+
+# Next.js
+.next/
+out/

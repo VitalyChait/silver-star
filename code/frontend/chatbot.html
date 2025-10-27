@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SilverStar - Job Search Assistant</title>
+    <!-- Tailwind CSS CDN --><script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts - Inter --><link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        /* Base styles */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* Charcoal (bg-gray-900) */
+            color: #D1D5DB; /* Silver (text-gray-300) */
+            cursor: none; /* Hide the default cursor */
+            overflow-x: hidden;
+        }
+
+        /* Custom "SilverStar" cursor */
+        #custom-cursor {
+            position: fixed;
+            width: 28px;
+            height: 28px;
+            background: #E5E7EB; /* silver/gray-200 */
+            /* Star shape */
+            clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+            transform: translate(-50%, -50%); /* Center on mouse */
+            pointer-events: none; /* Allow clicking "through" the cursor */
+            transition: all 0.1s ease-out;
+            z-index: 9999;
+        }
+
+        /* Interaction: Grow cursor and button on hover */
+        #custom-cursor.cursor-interact {
+            transform: translate(-50%, -50%) scale(1.5) rotate(72deg);
+        }
+
+        .button-interact-grow {
+            transform: scale(1.05);
+            box-shadow: 0 0 30px rgba(229, 231, 235, 0.5); /* Glowing effect */
+        }
+
+        /* Hide class for modals/sections */
+        .hidden {
+            display: none;
+        }
+
+        /* Chat container styles */
+        .chat-container {
+            height: calc(100vh - 200px);
+            overflow-y: auto;
+            scrollbar-width: thin;
+            scrollbar-color: #4B5563 #1F2937;
+        }
+
+        .chat-container::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .chat-container::-webkit-scrollbar-track {
+            background: #1F2937;
+        }
+
+        .chat-container::-webkit-scrollbar-thumb {
+            background-color: #4B5563;
+            border-radius: 4px;
+        }
+
+        .message {
+            max-width: 80%;
+            padding: 12px 16px;
+            border-radius: 18px;
+            margin-bottom: 16px;
+            line-height: 1.4;
+        }
+
+        .user-message {
+            background-color: #374151; /* gray-700 */
+            color: #F9FAFB; /* gray-50 */
+            align-self: flex-end;
+            border-bottom-right-radius: 4px;
+        }
+
+        .bot-message {
+            background-color: #1F2937; /* gray-800 */
+            color: #E5E7EB; /* gray-200 */
+            align-self: flex-start;
+            border-bottom-left-radius: 4px;
+        }
+
+        .typing-indicator {
+            display: inline-flex;
+            align-items: center;
+            padding: 8px 12px;
+        }
+
+        .typing-indicator span {
+            height: 8px;
+            width: 8px;
+            background-color: #9CA3AF; /* gray-400 */
+            border-radius: 50%;
+            display: inline-block;
+            margin: 0 2px;
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-indicator span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-indicator span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes typing {
+            0%, 60%, 100% {
+                transform: translateY(0);
+            }
+            30% {
+                transform: translateY(-10px);
+            }
+        }
+
+        /* Voice button styles */
+        .voice-button {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .voice-button.recording {
+            animation: pulse 1.5s infinite;
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+            }
+        }
+
+        /* Dynamic background gradient animation */
+        .dynamic-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(45deg, #111827, #1f2937, #111827, #1f2937);
+            background-size: 400% 400%;
+            animation: gradientShift 15s ease infinite;
+            z-index: -1;
+        }
+        
+        @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        /* Floating particles for additional dynamic effect */
+        .particle {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 0;
+        }
+        
+        .particle-animation {
+            animation: floatUp 10s linear infinite;
+        }
+        
+        @keyframes floatUp {
+            0% {
+                transform: translateY(100vh) translateX(0);
+                opacity: 0;
+            }
+            10% {
+                opacity: 1;
+            }
+            90% {
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(-100vh) translateX(100px);
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <!-- Dynamic Background --><div class="dynamic-bg"></div>
+    
+    <!-- Floating Particles Container --><div id="particle-container" class="fixed inset-0 pointer-events-none z-0"></div>
+
+    <!-- Custom SilverStar Cursor --><div id="custom-cursor"></div>
+
+    <!-- Main Container --><div class="relative min-h-screen flex flex-col overflow-hidden z-10">
+
+        <!-- Header --><header class="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-20">
+            <div class="flex items-center">
+                <h1 class="ml-3 text-xl font-bold text-gray-100">SilverStar Assistant</h1>
+            </div>
+            <nav class="flex items-center gap-4">
+                <span id="user-name" class="text-gray-300"></span>
+                <button id="back-to-home" class="interactive-target text-gray-300 hover:text-white transition-colors duration-200 text-lg">Home</button>
+                <button id="logout-btn" class="interactive-target bg-gray-200 text-gray-900 px-5 py-2 rounded-lg font-medium hover:bg-white transition-all duration-200">Logout</button>
+            </nav>
+        </header>
+
+        <!-- Chat Section --><section class="flex-1 flex flex-col p-6 max-w-4xl w-full mx-auto">
+            <div id="chat-container" class="chat-container flex flex-col">
+                <!-- Messages will be added here dynamically -->
+            </div>
+            
+            <!-- Input Area --><div class="mt-4 flex items-center gap-3">
+                <input 
+                    type="text" 
+                    id="message-input" 
+                    placeholder="Type your message here..." 
+                    class="flex-1 p-3 rounded-lg bg-gray-800 border border-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-gray-400"
+                >
+                <button 
+                    id="voice-button" 
+                    class="voice-button interactive-target p-3 rounded-full bg-gray-700 text-gray-300 hover:bg-gray-600 transition-all duration-200"
+                    title="Hold to record voice message"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                </button>
+                <button 
+                    id="send-button" 
+                    class="interactive-target p-3 rounded-full bg-gray-200 text-gray-900 hover:bg-white transition-all duration-200"
+                >
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                    </svg>
+                </button>
+            </div>
+        </section>
+
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- Authentication State ---
+            let currentUser = null;
+            const API_BASE_URL = 'http://localhost:8000/api';
+            let conversationId = null;
+            let isRecording = false;
+            let mediaRecorder = null;
+            let audioChunks = [];
+            
+            // Check if user is logged in
+            const token = localStorage.getItem('silverstar_token');
+            if (!token) {
+                // Redirect to home if not logged in
+                window.location.href = 'silverstar.html';
+                return;
+            }
+            
+            // Get user profile
+            fetch(`${API_BASE_URL}/profile`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            })
+            .then(response => {
+                if (response.ok) {
+                    return response.json();
+                } else {
+                    throw new Error('Invalid token');
+                }
+            })
+            .then(data => {
+                currentUser = data;
+                const userNameEl = document.getElementById('user-name');
+                if (userNameEl) {
+                    userNameEl.textContent = currentUser.name || currentUser.email;
+                }
+                
+                // Initialize chat with greeting
+                addBotMessage("Hello! I'm your SilverStar job assistant. I'll help you find the perfect job opportunity. Let's start with your name.");
+            })
+            .catch(error => {
+                console.error('Token validation error:', error);
+                localStorage.removeItem('silverstar_token');
+                window.location.href = 'silverstar.html';
+            });
+            
+            // --- Custom Cursor Logic ---
+            const cursor = document.getElementById('custom-cursor');
+            
+            document.addEventListener('mousemove', (e) => {
+                cursor.style.left = e.clientX + 'px';
+                cursor.style.top = e.clientY + 'px';
+            });
+
+            // Add interaction classes for hover effects
+            const interactiveTargets = document.querySelectorAll('.interactive-target, a, button');
+
+            interactiveTargets.forEach(target => {
+                target.addEventListener('mouseenter', () => {
+                    cursor.classList.add('cursor-interact');
+                });
+                target.addEventListener('mouseleave', () => {
+                    cursor.classList.remove('cursor-interact');
+                });
+            });
+            
+            // --- Chat Logic ---
+            const chatContainer = document.getElementById('chat-container');
+            const messageInput = document.getElementById('message-input');
+            const sendButton = document.getElementById('send-button');
+            const voiceButton = document.getElementById('voice-button');
+            const backToHomeButton = document.getElementById('back-to-home');
+            const logoutButton = document.getElementById('logout-btn');
+            
+            // Add message to chat
+            function addMessage(content, isUser = false) {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
+                messageDiv.textContent = content;
+                
+                chatContainer.appendChild(messageDiv);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+                
+                return messageDiv;
+            }
+            
+            function addUserMessage(content) {
+                return addMessage(content, true);
+            }
+            
+            function addBotMessage(content) {
+                return addMessage(content, false);
+            }
+            
+            function showTypingIndicator() {
+                const typingDiv = document.createElement('div');
+                typingDiv.className = 'message bot-message typing-indicator';
+                typingDiv.innerHTML = '<span></span><span></span><span></span>';
+                
+                chatContainer.appendChild(typingDiv);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+                
+                return typingDiv;
+            }
+            
+            function removeTypingIndicator(indicator) {
+                if (indicator && indicator.parentNode) {
+                    indicator.parentNode.removeChild(indicator);
+                }
+            }
+            
+            // Send message to chatbot
+            async function sendMessage() {
+                const message = messageInput.value.trim();
+                if (!message) return;
+                
+                // Add user message to chat
+                addUserMessage(message);
+                messageInput.value = '';
+                
+                // Show typing indicator
+                const typingIndicator = showTypingIndicator();
+                
+                try {
+                    const response = await fetch(`${API_BASE_URL}/chatbot/chat`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            message: message,
+                            conversation_id: conversationId
+                        })
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('Failed to send message');
+                    }
+                    
+                    const data = await response.json();
+                    
+                    // Remove typing indicator
+                    removeTypingIndicator(typingIndicator);
+                    
+                    // Add bot response to chat
+                    addBotMessage(data.response);
+                    
+                    // Update conversation ID
+                    conversationId = data.conversation_id;
+                    
+                    // If we have candidate info, we could display it or use it for recommendations
+                    if (data.candidate_info && Object.keys(data.candidate_info).length > 0) {
+                        console.log('Candidate info:', data.candidate_info);
+                    }
+                } catch (error) {
+                    console.error('Error sending message:', error);
+                    removeTypingIndicator(typingIndicator);
+                    addBotMessage('Sorry, I encountered an error. Please try again.');
+                }
+            }
+            
+            // Voice recording functionality
+            async function startRecording() {
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorder = new MediaRecorder(stream);
+                    audioChunks = [];
+                    
+                    mediaRecorder.ondataavailable = (event) => {
+                        audioChunks.push(event.data);
+                    };
+                    
+                    mediaRecorder.onstop = async () => {
+                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+                        const audioBase64 = await blobToBase64(audioBlob);
+                        
+                        // Show typing indicator
+                        const typingIndicator = showTypingIndicator();
+                        
+                        try {
+                            const response = await fetch(`${API_BASE_URL}/chatbot/voice`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': `Bearer ${token}`
+                                },
+                                body: JSON.stringify({
+                                    audio_data: audioBase64,
+                                    conversation_id: conversationId
+                                })
+                            });
+                            
+                            if (!response.ok) {
+                                throw new Error('Failed to send voice message');
+                            }
+                            
+                            const data = await response.json();
+                            
+                            // Remove typing indicator
+                            removeTypingIndicator(typingIndicator);
+                            
+                            // Add transcribed text and response to chat
+                            if (data.transcribed_text) {
+                                addUserMessage(data.transcribed_text);
+                            }
+                            
+                            addBotMessage(data.response_text);
+                            
+                            // Update conversation ID
+                            conversationId = data.conversation_id;
+                            
+                            // Play response audio if available
+                            if (data.response_audio) {
+                                playAudioResponse(data.response_audio);
+                            }
+                        } catch (error) {
+                            console.error('Error sending voice message:', error);
+                            removeTypingIndicator(typingIndicator);
+                            addBotMessage('Sorry, I encountered an error with your voice message. Please try again.');
+                        }
+                    };
+                    
+                    mediaRecorder.start();
+                    isRecording = true;
+                    voiceButton.classList.add('recording');
+                } catch (error) {
+                    console.error('Error accessing microphone:', error);
+                    addBotMessage('Sorry, I could not access your microphone. Please check your permissions.');
+                }
+            }
+            
+            function stopRecording() {
+                if (mediaRecorder && isRecording) {
+                    mediaRecorder.stop();
+                    isRecording = false;
+                    voiceButton.classList.remove('recording');
+                    
+                    // Stop all tracks to release the microphone
+                    mediaRecorder.stream.getTracks().forEach(track => track.stop());
+                }
+            }
+            
+            function blobToBase64(blob) {
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result.split(',')[1]);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+            }
+            
+            function playAudioResponse(audioBase64) {
+                try {
+                    const audio = new Audio(`data:audio/mp3;base64,${audioBase64}`);
+                    audio.play().catch(error => {
+                        console.error('Error playing audio response:', error);
+                    });
+                } catch (error) {
+                    console.error('Error creating audio element:', error);
+                }
+            }
+            
+            // Event listeners
+            sendButton.addEventListener('click', sendMessage);
+            
+            messageInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+            
+            // Voice button events
+            voiceButton.addEventListener('mousedown', startRecording);
+            voiceButton.addEventListener('mouseup', stopRecording);
+            voiceButton.addEventListener('mouseleave', stopRecording);
+            
+            // Touch events for mobile
+            voiceButton.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                startRecording();
+            });
+            voiceButton.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                stopRecording();
+            });
+            
+            // Navigation buttons
+            if (backToHomeButton) {
+                backToHomeButton.addEventListener('click', () => {
+                    window.location.href = 'silverstar.html';
+                });
+            }
+            
+            if (logoutButton) {
+                logoutButton.addEventListener('click', () => {
+                    localStorage.removeItem('silverstar_token');
+                    window.location.href = 'silverstar.html';
+                });
+            }
+            
+            // --- Floating Particles Generation & Animation ---
+            const particleContainer = document.getElementById('particle-container');
+            const numParticles = 30; // Number of particles
+            
+            function createParticle() {
+                const particle = document.createElement('div');
+                particle.classList.add('particle', 'particle-animation');
+
+                const spawnEdge = Math.floor(Math.random() * 4); // 0: top, 1: right, 2: bottom, 3: left
+                let startX, startY;
+
+                switch (spawnEdge) {
+                    case 0: // Top
+                        startX = Math.random() * window.innerWidth;
+                        startY = -10; // Slightly off-screen
+                        break;
+                    case 1: // Right
+                        startX = window.innerWidth + 10;
+                        startY = Math.random() * window.innerHeight;
+                        break;
+                    case 2: // Bottom
+                        startX = Math.random() * window.innerWidth;
+                        startY = window.innerHeight + 10;
+                        break;
+                    case 3: // Left
+                        startX = -10;
+                        startY = Math.random() * window.innerHeight;
+                        break;
+                }
+                
+                particle.style.left = `${startX}px`;
+                particle.style.top = `${startY}px`;
+                particle.style.width = `${Math.random() * 4 + 2}px`;
+                particle.style.height = particle.style.width;
+                particle.style.setProperty('--duration', `${2 + Math.random() * 3}s`); // Random duration between 2 and 5 seconds
+
+                particleContainer.appendChild(particle);
+
+                // Remove particle after animation and create a new one
+                particle.addEventListener('animationend', () => {
+                    particle.remove();
+                    createParticle(); // Regenerate a new particle
+                });
+            }
+
+            // Create initial set of particles
+            for (let i = 0; i < numParticles; i++) {
+                // Delay initial creation to spread them out
+                setTimeout(createParticle, i * (1000 / numParticles)); 
+            }
+        });
+    </script>
+
+</body>
+</html>
