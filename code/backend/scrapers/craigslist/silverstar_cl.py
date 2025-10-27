@@ -3,7 +3,7 @@ import json
 from bs4 import BeautifulSoup
 import os
 
-client = ScrapingBeeClient(api_key=os.environ["API_KEY"])
+client = ScrapingBeeClient(api_key=os.environ["SCRAPING_BEE_API_KEY"])
 
 url = 'https://boston.craigslist.org/search/jjj?query=remote#search=2~gallery~0'
 
