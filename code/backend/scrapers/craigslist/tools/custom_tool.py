@@ -1,4 +1,19 @@
-from crewai.tools import BaseTool
+# CrewAI BaseTool compatibility
+try:
+    from crewai.tools import BaseTool
+except Exception:  # pragma: no cover
+    try:
+        from crewai_tools import BaseTool
+    except Exception:
+        class BaseTool:
+            name: str = "BaseTool"
+            description: str = ""
+            args_schema = None
+            def __init__(self, **kwargs):
+                for k, v in kwargs.items():
+                    setattr(self, k, v)
+            def run(self, **kwargs):
+                return self._run(**kwargs)
 from typing import Type
 from pydantic import BaseModel, Field
 

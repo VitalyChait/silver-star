@@ -25,9 +25,9 @@ llm/audio/
 To use the audio functionality, you'll need to install the following dependencies:
 
 ```bash
-# All dependencies are included in the main requirements.txt file
+# Dependencies are managed in backend/pyproject.toml
 cd backend
-pip install -r requirements.txt
+uv sync
 ```
 
 The audio-specific dependencies are:

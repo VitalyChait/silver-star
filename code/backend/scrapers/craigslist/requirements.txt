@@ -7,6 +7,7 @@ requests>=2.31.0
 # but crewai.BaseTool still works with pydantic v2 via compatibility.
 # If you run into version issues with crewai, pin:
 crewai==0.51.1
-#pydantic==1.10.15
-# And update imports accordingly.
-scrapingbee=scrapingbee-2.0.2
+# If needed, pin pydantic v1:
+# pydantic==1.10.15
+scrapingbee==2.0.2
+openai>=1.50.0

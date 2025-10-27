@@ -36,26 +36,26 @@ pkill -f "uvicorn app.main:app" 2>/dev/null || true
 pkill -f "python -m http.server" 2>/dev/null || true
 
 # Step 1: Install dependencies
-print_status "Step 1: Installing Python dependencies..."
+print_status "Step 1: Installing Python dependencies with uv..."
 cd "$SCRIPT_DIR/code/backend"
-if [ -d "venv" ]; then
-    print_status "Virtual environment already exists"
-else
-    print_status "Creating virtual environment..."
-    python3 -m venv venv
+
+# Ensure uv is installed
+if ! command -v uv >/dev/null 2>&1; then
+    print_error "uv not found. Please install uv:"
+    echo "  curl -LsSf https://astral.sh/uv/install.sh | sh"
+    echo "Then re-run: ./setup_and_run.sh"
+    exit 1
 fi
 
-print_status "Activating virtual environment..."
-source ./venv/bin/activate
-
-print_status "Installing dependencies..."
-pip install -r requirements.txt
-print_success "Dependencies installed successfully"
+# Sync environment from pyproject
+print_status "Syncing environment (uv sync)..."
+uv sync
+print_success "Dependencies installed successfully via uv"
 
 # Step 2: Configure LLM API keys
 print_status "Step 2: Setting up LLM configuration..."
 LLM_CONFIG_FILE="app/llm/.llm_config"
-LLM_CONFIG_EXAMPLE="app/llm/.llm_config.example"
+LLM_CONFIG_EXAMPLE="app/llm/llm_config_example"
 
 if [ -f "$LLM_CONFIG_FILE" ]; then
     print_status "LLM config file already exists"
@@ -96,7 +96,7 @@ if [ -f "data.db" ]; then
     fi
 fi
 
-python populate_jobs.py
+uv run python populate_jobs.py
 print_success "Database initialized with sample jobs"
 
 # Step 4: Remove unnecessary script files
@@ -129,8 +129,7 @@ lsof -ti:3000 | xargs kill -9 2>/dev/null || true
 # Start the backend server
 print_status "Starting backend server..."
 cd "$SCRIPT_DIR/code/backend"
-source ./venv/bin/activate
-python3 start_server.py &
+uv run python start_server.py &
 BACKEND_PID=$!
 
 # Wait a moment for the backend to start
@@ -139,7 +138,7 @@ sleep 3
 # Start a simple HTTP server for the frontend
 print_status "Starting frontend server..."
 cd "$SCRIPT_DIR/code/frontend"
-python3 -m http.server 3000 &
+uv run python -m http.server 3000 &
 FRONTEND_PID=$!
 cd "$SCRIPT_DIR"
 

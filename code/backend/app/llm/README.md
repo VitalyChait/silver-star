@@ -100,25 +100,15 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1/chat/completions
 
 ## Dependencies
 
-The following Python packages are required:
-
-### Core Dependencies
-- `google-generativeai`: For Gemini API integration
-- `google-cloud-speech`: For speech-to-text
-- `google-cloud-texttospeech`: For text-to-speech
-
-### Audio Functionality Dependencies
-- `pygame`: Required for audio playback
-- `pyttsx3`: Local text-to-speech engine (fallback)
-
-All dependencies are listed in the main `requirements.txt` file in the server directory.
+Dependencies are managed with uv via the backend `pyproject.toml`.
+Use `uv sync` to install and `uv run` to execute commands within the project environment.
 
 ## Usage
 
-1. Install the required dependencies:
+1. Install the required dependencies with uv:
    ```bash
    cd backend
-   pip install -r requirements.txt
+   uv sync
    ```
 
 2. Configure your API keys in the `.llm_config` file
@@ -126,7 +116,7 @@ All dependencies are listed in the main `requirements.txt` file in the server di
 3. Start the backend server:
    ```bash
    cd backend
-   uvicorn app.main:app --reload
+   uv run uvicorn app.main:app --reload
    ```
 
 4. Access the chatbot UI at `http://localhost:3000/chatbot`

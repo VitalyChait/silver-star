@@ -10,16 +10,24 @@ SilverStar is a job application platform that connects experienced professionals
 - Job scraping from USAJOBS
 - Modern, responsive UI with custom star cursor
 
-## Quick Start
+## Quick Start (uv)
 
-The easiest way to get started is to use our automated setup script:
+We use the uv Python environment manager for dependency management and running commands.
+
+First, install uv if you don't have it:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Then use the automated setup script:
 
 ```bash
 # Clone the repository
 git clone <repository-url>
 cd silver-star
 
-# Run the setup and start script
+# Run the setup and start script (uses uv)
 ./setup_and_run.sh
 ```
 
@@ -30,27 +38,27 @@ This single script will:
 4. Start both the backend and frontend servers
 5. Clean up any unnecessary files
 
-## Manual Setup
+## Manual Setup (uv)
 
-If you prefer to set up manually:
+If you prefer to set up manually with uv:
 
 ### 1. Backend Setup
 
 ```bash
 cd code/backend
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+
+# Install dependencies from pyproject.toml
+uv sync
 
 # Configure LLM API keys
-cp app/llm/.llm_config.example app/llm/.llm_config
+cp app/llm/llm_config_example app/llm/.llm_config
 # Edit app/llm/.llm_config with your actual API keys
 
 # Initialize database
-python populate_jobs.py
+uv run python populate_jobs.py
 
 # Start the server
-python start_server.py
+uv run python start_server.py
 ```
 
 ### 2. Frontend
@@ -59,7 +67,7 @@ The frontend consists of static HTML files that can be served by any web server.
 
 ```bash
 cd code/frontend
-python -m http.server 3000
+uv run python -m http.server 3000
 ```
 
 ## Accessing the Application

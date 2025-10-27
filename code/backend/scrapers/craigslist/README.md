@@ -50,12 +50,15 @@ Convenience: do both steps at once.
 **Response:**
 Contains both the `intent_json` and the `results` from JobFetchers.
 
-## Run Locally
+## Run Locally (uv)
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn server:app --reload --port 8000
+# From the backend root (code/backend)
+uv sync --extra craigslist
+
+# In this folder
+cd scrapers/craigslist
+uv run uvicorn server:app --reload --port 8000
 ```
 
 Open http://127.0.0.1:8000/docs for interactive Swagger UI.
