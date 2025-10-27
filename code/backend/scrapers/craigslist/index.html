@@ -1,0 +1,53 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Silver Star</title>
+  <link rel="stylesheet" href="/static/style.css"/>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <h1>Silver Star</h1>
+      <p>Tell me what you're looking for and I'll find matching roles.</p>
+    </header>
+
+    <main>
+      <div id="chat"></div>
+
+      <section id="suggestions">
+        <h3>Try one of these to get started</h3>
+        <div class="chips">
+          <button class="chip" data-text="English teacher, can tutor">English teacher, tutor 5hrs/wk</button>
+          <button class="chip" data-text="Retired Healthcare Marketing Professional>Retired Healthcare Marketing Professional</button>
+          <button class="chip" data-text="Gardener, light landscaping">Gardener, light landscaping</button>
+          <button class="chip" data-text="Software developer, 10 hours/wk">Software developer, 10 hours/wk</button>
+        </div>
+      </section>
+
+      <form id="composer">
+        <input id="user-input" type="text" placeholder="e.g., I'm a retired nurse looking to advise young parents, 10hrs/wk" autocomplete="off"/>
+        <button type="submit">Send</button>
+      </form>
+
+      <section id="intent-editor" class="hidden">
+        <h3>Proposed intent</h3>
+        <textarea id="intent-json" spellcheck="false"></textarea>
+        <div class="actions">
+          <button id="search-btn">Search jobs</button>
+          <button id="reset-btn" class="secondary">Start over</button>
+        </div>
+      </section>
+
+      <section id="results" class="hidden">
+        <h3>Results</h3>
+        <div id="summary"></div>
+        <div id="cards"></div>
+      </section>
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
