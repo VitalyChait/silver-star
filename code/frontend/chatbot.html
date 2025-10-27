@@ -206,16 +206,15 @@
 
     <!-- Main Container --><div class="relative min-h-screen flex flex-col overflow-hidden z-10">
 
-        <!-- Header --><header class="p-6 flex justify-between items-center z-20 bg-gray-900 bg-opacity-90">
+        <!-- Header --><header class="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-20">
             <div class="flex items-center">
-                <img src="public/assets/logo.png" alt="SilverStar Logo" class="h-10 w-auto">
                 <h1 class="ml-3 text-xl font-bold text-gray-100">SilverStar Assistant</h1>
             </div>
-            <div class="flex items-center gap-4">
+            <nav class="flex items-center gap-4">
                 <span id="user-name" class="text-gray-300"></span>
-                <button id="back-to-home" class="interactive-target text-gray-300 hover:text-white transition-colors duration-200 text-lg">Back to Home</button>
-                <button id="logout-btn" class="interactive-target text-gray-300 hover:text-white transition-colors duration-200 text-lg">Logout</button>
-            </div>
+                <button id="back-to-home" class="interactive-target text-gray-300 hover:text-white transition-colors duration-200 text-lg">Home</button>
+                <button id="logout-btn" class="interactive-target bg-gray-200 text-gray-900 px-5 py-2 rounded-lg font-medium hover:bg-white transition-all duration-200">Logout</button>
+            </nav>
         </header>
 
         <!-- Chat Section --><section class="flex-1 flex flex-col p-6 max-w-4xl w-full mx-auto">
@@ -285,7 +284,10 @@
             })
             .then(data => {
                 currentUser = data;
-                document.getElementById('user-name').textContent = currentUser.name || currentUser.email;
+                const userNameEl = document.getElementById('user-name');
+                if (userNameEl) {
+                    userNameEl.textContent = currentUser.name || currentUser.email;
+                }
                 
                 // Initialize chat with greeting
                 addBotMessage("Hello! I'm your SilverStar job assistant. I'll help you find the perfect job opportunity. Let's start with your name.");
@@ -538,14 +540,18 @@
             });
             
             // Navigation buttons
-            backToHomeButton.addEventListener('click', () => {
-                window.location.href = 'silverstar.html';
-            });
+            if (backToHomeButton) {
+                backToHomeButton.addEventListener('click', () => {
+                    window.location.href = 'silverstar.html';
+                });
+            }
             
-            logoutButton.addEventListener('click', () => {
-                localStorage.removeItem('silverstar_token');
-                window.location.href = 'silverstar.html';
-            });
+            if (logoutButton) {
+                logoutButton.addEventListener('click', () => {
+                    localStorage.removeItem('silverstar_token');
+                    window.location.href = 'silverstar.html';
+                });
+            }
             
             // --- Floating Particles Generation & Animation ---
             const particleContainer = document.getElementById('particle-container');
