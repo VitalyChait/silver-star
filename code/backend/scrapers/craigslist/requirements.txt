@@ -1,0 +1,11 @@
+
+fastapi>=0.111.0
+uvicorn[standard]>=0.30.0
+pydantic>=2.7.0
+requests>=2.31.0
+# Your existing modules rely on crewai & pydantic v1 style BaseModel imports. The provided code uses pydantic v2,
+# but crewai.BaseTool still works with pydantic v2 via compatibility.
+# If you run into version issues with crewai, pin:
+crewai==0.51.1
+#pydantic==1.10.15
+# And update imports accordingly.
