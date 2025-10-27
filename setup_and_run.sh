@@ -24,6 +24,107 @@ print_error() {
     echo -e "\033[1;31m[ERROR]\033[0m $1"
 }
 
+# Ensure logs directory exists early
+LOG_DIR="$SCRIPT_DIR/logs"
+mkdir -p "$LOG_DIR"
+BACKEND_LOG_FILE="$LOG_DIR/backend.log"
+FRONTEND_LOG_FILE="$LOG_DIR/frontend.log"
+
+sanitize_string() {
+    local value="$1"
+    value="$(echo "$value" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+    echo "$value"
+}
+
+sanity_check_llm_keys() {
+    local config_file="$1"
+    if [ ! -f "$config_file" ]; then
+        print_error "LLM configuration file not found at $config_file"
+        exit 1
+    fi
+
+    print_status "Performing LLM API key sanity check..."
+
+    local -a missing_keys
+    local -a placeholder_keys
+    local key value
+
+    missing_keys=()
+    placeholder_keys=()
+
+    while IFS='=' read -r raw_key raw_value; do
+        key=$(sanitize_string "$raw_key")
+
+        # Skip comments and blank lines
+        if [[ -z "$key" || "${key:0:1}" == "#" ]]; then
+            continue
+        fi
+
+        value=$(sanitize_string "$raw_value")
+
+        if [[ -z "$value" ]]; then
+            missing_keys+=("$key")
+            continue
+        fi
+
+        if [[ "$value" == *"YOUR_"* || "$value" == *"REPLACE"* || "$value" == *"INSERT"* || "$value" == *"CHANGE_ME"* || "$value" == *"PUT_YOUR"* || "$value" == *"ADD_YOUR"* ]]; then
+            placeholder_keys+=("$key")
+        fi
+    done < "$config_file"
+
+    if [ "${#missing_keys[@]}" -gt 0 ]; then
+        print_error "Missing values detected for: ${missing_keys[*]}"
+        exit 1
+    fi
+
+    if [ "${#placeholder_keys[@]}" -gt 0 ]; then
+        print_error "Placeholder values detected for: ${placeholder_keys[*]}"
+        exit 1
+    fi
+
+    print_success "LLM API keys sanity check passed"
+}
+
+run_chatbot_sanity_check() {
+    local url="http://localhost:8000/api/chatbot/chat"
+    local payload='{"message":"Hello from the SilverStar sanity check!"}'
+    local attempts=0
+    local max_attempts=5
+    local delay_seconds=3
+    local last_response=""
+    local exit_code=1
+
+    while [ $attempts -lt $max_attempts ]; do
+        last_response=$(curl --silent --show-error --connect-timeout 2 --max-time 5 \
+            -H 'Content-Type: application/json' \
+            -X POST \
+            -d "$payload" \
+            "$url" 2>&1)
+        exit_code=$?
+
+        if [ $exit_code -eq 0 ] && [[ "$last_response" == *'"response"'* ]]; then
+            local preview
+            preview=$(echo "$last_response" | sed -n 's/.*"response"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+            if [ -n "$preview" ]; then
+                print_success "Chatbot sanity check passed with response: \"$preview\""
+            else
+                print_success "Chatbot sanity check passed."
+            fi
+            return 0
+        fi
+
+        print_status "Chatbot sanity check attempt $((attempts + 1)) failed. Retrying in $delay_seconds seconds..."
+        attempts=$((attempts + 1))
+        sleep $delay_seconds
+    done
+
+    print_error "Chatbot sanity check failed after $max_attempts attempts."
+    if [ -n "$last_response" ]; then
+        print_error "Last response: $last_response"
+    fi
+    return 1
+}
+
 # Check if we're in the right directory
 if [ ! -f "$SCRIPT_DIR/code/backend/start_server.py" ]; then
     print_error "Please run this script from the silver-star root directory"
@@ -65,6 +166,8 @@ else
     print_success "LLM config file created"
     print_status "Please edit $LLM_CONFIG_FILE with your actual API keys before running the chatbot"
 fi
+
+sanity_check_llm_keys "$LLM_CONFIG_FILE"
 
 # Step 3: Initialize database
 print_status "Step 3: Initializing database with sample jobs..."
@@ -138,9 +241,18 @@ sleep 3
 # Start a simple HTTP server for the frontend
 print_status "Starting frontend server..."
 cd "$SCRIPT_DIR/code/frontend"
-uv run python -m http.server 3000 &
+( uv run python -m http.server 3000 2>&1 | tee -a "$FRONTEND_LOG_FILE" ) &
 FRONTEND_PID=$!
 cd "$SCRIPT_DIR"
+
+print_status "Waiting for services before running chatbot sanity check..."
+sleep 5
+print_status "Running chatbot sanity check..."
+if run_chatbot_sanity_check; then
+    :
+else
+    print_error "Chatbot sanity check did not complete successfully. Please review the backend logs."
+fi
 
 # Function to cleanup on exit
 cleanup() {

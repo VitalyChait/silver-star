@@ -14,8 +14,10 @@ from ..deps import get_current_user
 from ..db import get_db
 
 # Add the llm module to the Python path
-llm_path = Path(__file__).parent.parent.parent.parent / "llm"
-sys.path.insert(0, str(llm_path))
+app_root = Path(__file__).resolve().parent.parent
+app_root_str = str(app_root)
+if app_root_str not in sys.path:
+    sys.path.insert(0, app_root_str)
 
 try:
     import llm

@@ -258,8 +258,9 @@
             const API_BASE_URL = 'http://localhost:8000/api';
             let conversationId = null;
             let isRecording = false;
-            let mediaRecorder = null;
-            let audioChunks = [];
+            let speechRecognition = null;
+            let speechRecognitionSupported = false;
+            let speechSegments = [];
             
             // Check if user is logged in
             const token = localStorage.getItem('silverstar_token');
@@ -363,19 +364,22 @@
                 }
             }
             
-            // Send message to chatbot
-            async function sendMessage() {
-                const message = messageInput.value.trim();
-                if (!message) return;
+            async function sendChatMessage(message, options = {}) {
+                const { showUserMessage = true } = options;
+                const trimmedMessage = (message || '').trim();
+                if (!trimmedMessage) {
+                    return;
+                }
                 
-                // Add user message to chat
-                addUserMessage(message);
-                messageInput.value = '';
-                
-                // Show typing indicator
-                const typingIndicator = showTypingIndicator();
+                let typingIndicator = null;
                 
                 try {
+                    if (showUserMessage) {
+                        addUserMessage(trimmedMessage);
+                    }
+                    
+                    typingIndicator = showTypingIndicator();
+                    
                     const response = await fetch(`${API_BASE_URL}/chatbot/chat`, {
                         method: 'POST',
                         headers: {
@@ -383,7 +387,7 @@
                             'Authorization': `Bearer ${token}`
                         },
                         body: JSON.stringify({
-                            message: message,
+                            message: trimmedMessage,
                             conversation_id: conversationId
                         })
                     });
@@ -394,128 +398,131 @@
                     
                     const data = await response.json();
                     
-                    // Remove typing indicator
-                    removeTypingIndicator(typingIndicator);
-                    
-                    // Add bot response to chat
                     addBotMessage(data.response);
-                    
-                    // Update conversation ID
                     conversationId = data.conversation_id;
                     
-                    // If we have candidate info, we could display it or use it for recommendations
                     if (data.candidate_info && Object.keys(data.candidate_info).length > 0) {
                         console.log('Candidate info:', data.candidate_info);
                     }
                 } catch (error) {
                     console.error('Error sending message:', error);
-                    removeTypingIndicator(typingIndicator);
                     addBotMessage('Sorry, I encountered an error. Please try again.');
+                } finally {
+                    removeTypingIndicator(typingIndicator);
                 }
             }
             
-            // Voice recording functionality
-            async function startRecording() {
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    mediaRecorder = new MediaRecorder(stream);
-                    audioChunks = [];
-                    
-                    mediaRecorder.ondataavailable = (event) => {
-                        audioChunks.push(event.data);
-                    };
-                    
-                    mediaRecorder.onstop = async () => {
-                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                        const audioBase64 = await blobToBase64(audioBlob);
-                        
-                        // Show typing indicator
-                        const typingIndicator = showTypingIndicator();
-                        
-                        try {
-                            const response = await fetch(`${API_BASE_URL}/chatbot/voice`, {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                    'Authorization': `Bearer ${token}`
-                                },
-                                body: JSON.stringify({
-                                    audio_data: audioBase64,
-                                    conversation_id: conversationId
-                                })
-                            });
-                            
-                            if (!response.ok) {
-                                throw new Error('Failed to send voice message');
-                            }
-                            
-                            const data = await response.json();
-                            
-                            // Remove typing indicator
-                            removeTypingIndicator(typingIndicator);
-                            
-                            // Add transcribed text and response to chat
-                            if (data.transcribed_text) {
-                                addUserMessage(data.transcribed_text);
-                            }
-                            
-                            addBotMessage(data.response_text);
-                            
-                            // Update conversation ID
-                            conversationId = data.conversation_id;
-                            
-                            // Play response audio if available
-                            if (data.response_audio) {
-                                playAudioResponse(data.response_audio);
-                            }
-                        } catch (error) {
-                            console.error('Error sending voice message:', error);
-                            removeTypingIndicator(typingIndicator);
-                            addBotMessage('Sorry, I encountered an error with your voice message. Please try again.');
+            function sendMessage() {
+                const message = messageInput.value.trim();
+                if (!message) {
+                    return;
+                }
+                
+                messageInput.value = '';
+                sendChatMessage(message, { showUserMessage: true });
+            }
+            
+            function initializeSpeechRecognition() {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SpeechRecognition) {
+                    return;
+                }
+                
+                speechRecognition = new SpeechRecognition();
+                speechRecognition.lang = 'en-US';
+                speechRecognition.continuous = false;
+                speechRecognition.interimResults = true;
+                speechRecognitionSupported = true;
+                
+                speechRecognition.addEventListener('result', (event) => {
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        const result = event.results[i];
+                        if (result.isFinal && result[0] && result[0].transcript) {
+                            speechSegments.push(result[0].transcript.trim());
                         }
-                    };
+                    }
+                });
+                
+                speechRecognition.addEventListener('end', () => {
+                    if (!isRecording) {
+                        speechSegments = [];
+                        return;
+                    }
                     
-                    mediaRecorder.start();
-                    isRecording = true;
-                    voiceButton.classList.add('recording');
+                    finalizeSpeechTranscript();
+                });
+                
+                speechRecognition.addEventListener('error', (event) => {
+                    console.error('Speech recognition error:', event.error);
+                    isRecording = false;
+                    voiceButton.classList.remove('recording');
+                    addBotMessage('Sorry, there was an issue with speech recognition. Please try again or use text input.');
+                });
+            }
+            
+            function finalizeSpeechTranscript() {
+                const transcript = speechSegments.join(' ').trim();
+                speechSegments = [];
+                
+                if (!isRecording) {
+                    return;
+                }
+                
+                isRecording = false;
+                voiceButton.classList.remove('recording');
+                
+                if (!transcript) {
+                    return;
+                }
+                
+                sendChatMessage(transcript, { showUserMessage: true });
+            }
+            
+            function startRecording() {
+                if (isRecording) {
+                    return;
+                }
+                
+                if (!speechRecognitionSupported || !speechRecognition) {
+                    addBotMessage('Speech recognition is not supported in this browser. Please use text input instead.');
+                    return;
+                }
+                
+                speechSegments = [];
+                isRecording = true;
+                voiceButton.classList.add('recording');
+                
+                try {
+                    speechRecognition.start();
                 } catch (error) {
-                    console.error('Error accessing microphone:', error);
-                    addBotMessage('Sorry, I could not access your microphone. Please check your permissions.');
+                    console.error('Failed to start speech recognition:', error);
+                    isRecording = false;
+                    voiceButton.classList.remove('recording');
+                    addBotMessage('Unable to start speech recognition. Please try again or use text input.');
                 }
             }
             
             function stopRecording() {
-                if (mediaRecorder && isRecording) {
-                    mediaRecorder.stop();
+                if (!isRecording) {
+                    return;
+                }
+                
+                if (speechRecognitionSupported && speechRecognition) {
+                    try {
+                        speechRecognition.stop();
+                    } catch (error) {
+                        console.error('Failed to stop speech recognition:', error);
+                        finalizeSpeechTranscript();
+                    }
+                } else {
                     isRecording = false;
                     voiceButton.classList.remove('recording');
-                    
-                    // Stop all tracks to release the microphone
-                    mediaRecorder.stream.getTracks().forEach(track => track.stop());
-                }
-            }
-            
-            function blobToBase64(blob) {
-                return new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result.split(',')[1]);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(blob);
-                });
-            }
-            
-            function playAudioResponse(audioBase64) {
-                try {
-                    const audio = new Audio(`data:audio/mp3;base64,${audioBase64}`);
-                    audio.play().catch(error => {
-                        console.error('Error playing audio response:', error);
-                    });
-                } catch (error) {
-                    console.error('Error creating audio element:', error);
                 }
             }
             
             // Event listeners
+            initializeSpeechRecognition();
+            
             sendButton.addEventListener('click', sendMessage);
             
             messageInput.addEventListener('keypress', (e) => {

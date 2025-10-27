@@ -5,9 +5,9 @@ from typing import Dict, List, Any, Optional
 
 from sqlalchemy.orm import Session
 
-# Import the server modules directly since we're now in the same app
+# Import the main app modules directly
 try:
-    from ... import crud, models
+    from app import crud, models
 except ImportError as e:
     print(f"Error importing server modules: {e}", file=sys.stderr)
     sys.exit(1)

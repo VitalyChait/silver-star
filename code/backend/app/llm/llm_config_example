@@ -9,7 +9,7 @@ GEMINI_PROVIDER=ai_studio
 
 # Vertex AI Settings (only required if GEMINI_PROVIDER=vertex)
 GEMINI_VERTEX_REGION=us-central1
-GEMINI_VERTEX_PROJECT=your-gcp-project-id
+GEMINI_VERTEX_PROJECT=gen-lang-client-0395786487
 
 # OpenRouter fallback configuration (optional)
 OPENROUTER_API_KEY=
