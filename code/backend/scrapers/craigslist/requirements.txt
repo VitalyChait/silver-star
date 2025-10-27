@@ -9,3 +9,4 @@ requests>=2.31.0
 crewai==0.51.1
 #pydantic==1.10.15
 # And update imports accordingly.
+scrapingbee=scrapingbee-2.0.2

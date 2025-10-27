@@ -1,424 +1,264 @@
-from crewai.tools import BaseTool
-from pydantic import BaseModel, Field
-from typing import Type, Dict, Any, List, Optional
-import json
+# tools/intent_collector.py
 
-class IntentCollectorInput(BaseModel):
-    """Input schema for Intent Collector Tool."""
-    user_responses: str = Field(
-        ..., 
-        description="User responses to job search preference questions, separated by semicolons or as a conversation flow"
+from __future__ import annotations
+import json, os, re, logging
+from typing import Any, Dict, List, Optional
+
+# ---- CrewAI BaseTool compat ----
+try:
+    from crewai.tools import BaseTool as _CrewBaseTool
+except Exception:
+    try:
+        from crewai_tools import BaseTool as _CrewBaseTool
+    except Exception:
+        class _CrewBaseTool:
+            name: str = "BaseTool"
+            description: str = ""
+            def __init__(self, **kwargs):
+                for k, v in kwargs.items():
+                    setattr(self, k, v)
+            def run(self, **kwargs):
+                raise NotImplementedError
+
+# ---- LLM client ----
+from openai import OpenAI
+
+# ---- Pydantic schema ----
+from pydantic import BaseModel, Field, ValidationError
+
+class Location(BaseModel):
+    type: Optional[str] = Field(default=None)  # remote|hybrid|onsite
+    city: Optional[str] = None
+    radius_km: Optional[int] = None
+
+class Intent(BaseModel):
+    keywords: List[str] = []
+    must_have: List[str] = []
+    nice_to_have: List[str] = []
+    job_categories: List[str] = []
+    location: Optional[Location] = None
+    work_type: List[str] = []
+    seniority: List[str] = []
+    salary_min: Optional[str] = None
+    max_age_days: int = 14
+    exclude_terms: List[str] = []
+    availability_hours_per_week: Optional[int] = None
+    notes: Optional[str] = None
+
+DEBUG = os.getenv("DEBUG_INTENT", "0") == "1"
+log = logging.getLogger("intent")
+if DEBUG:
+    logging.basicConfig(level=logging.INFO)
+
+SYSTEM_PROMPT = """You are a structured intent extraction agent for a job search AI.
+Given a freeform description of what the user is looking for,
+extract a JSON object with fields describing their search.
+
+Return JSON only, no commentary.
+Fields:
+- keywords: core words/phrases describing the role.
+- must_have: specific skills/technologies (if any).
+- nice_to_have: secondary skills.
+- job_categories: a list of broad categories from this taxonomy:
+  ["software engineering","data science & ml","product management","design & ux",
+   "it & support","sales & business dev","marketing & content","finance & accounting",
+   "operations & hr","customer success","education & tutoring","healthcare",
+   "construction & trades","logistics & warehouse","hospitality & retail",
+   "writing & editing","legal","real estate","manufacturing","admin & office",
+   "engineering","science & biotech"]
+- location: object {type, city, region, country} if mentioned.
+- work_type: ["full_time","part_time","contract"] if relevant.
+- seniority: ["junior","mid","senior","lead","principal"] if relevant.
+- salary_min: number if mentioned.
+- max_age_days: how fresh the posting should be.
+- exclude_terms: keywords to exclude.
+- notes: any additional context.
+
+Example 1:
+User: "I'm a retired nurse looking for work."
+→
+{
+  "keywords": ["nurse","healthcare","retired"],
+  "must_have": [],
+  "nice_to_have": [],
+  "job_categories": ["healthcare"],
+  "location": {"type": "unspecified"},
+  "work_type": ["part_time"],
+  "seniority": [],
+  "salary_min": null,
+  "max_age_days": 30,
+  "exclude_terms": [],
+  "notes": "retired nurse looking for part-time healthcare work"
+}
+
+Example 2:
+User: "I'm an English teacher looking to tutor kids online."
+→
+{
+  "keywords": ["english","tutor","teacher","kids","online"],
+  "job_categories": ["education & tutoring"],
+  "work_type": ["part_time"],
+  "location": {"type": "remote"},
+
+Inference rules:
+- If user implies tutoring/teaching (e.g., “tutor”, “teacher”), include "education & tutoring" in job_categories.
+- If user says “few hours/week” or similar, set work_type to ["part_time"] and set availability_hours_per_week if a number is present.
+- Detect remote/hybrid/onsite from "remote", "online", "virtual", "zoom", "onsite", "in person", "hybrid".
+- Parse salary if present; choose '/hr' for small numbers (<200) else '/yr'.
+- Prefer concise arrays and avoid duplicates.
+- If uncertain, leave fields null/empty.
+Return JSON only.
+"""
+
+EXAMPLES = [
+    {
+        "user": "I'm a retired English teacher looking to tutor kids a few hours a week, ideally online.",
+        "assistant": {
+            "keywords": ["english", "tutor", "kids"],
+            "must_have": [],
+            "nice_to_have": ["online", "after-school"],
+            "job_categories": ["education & tutoring"],
+            "location": {"type": "remote", "city": None, "radius_km": None},
+            "work_type": ["part_time"],
+            "seniority": [],
+            "salary_min": None,
+            "max_age_days": 14,
+            "exclude_terms": ["unpaid", "internship"],
+            "availability_hours_per_week": 5,
+            "notes": "Retired teacher; prefers online tutoring a few hours weekly."
+        }
+    }
+]
+
+def build_messages(user_text: str) -> list[dict[str, str]]:
+    msgs = [{"role": "system", "content": SYSTEM_PROMPT}]
+    for ex in EXAMPLES:
+        msgs.append({"role": "user", "content": ex["user"]})
+        msgs.append({"role": "assistant", "content": json.dumps(ex["assistant"], ensure_ascii=False)})
+    msgs.append({"role": "user", "content": user_text})
+    return msgs
+
+_JSON_RE = re.compile(r"\{.*\}\s*$", re.S)
+def extract_json_maybe(s: str) -> str:
+    m = _JSON_RE.search(s.strip())
+    return m.group(0) if m else s.strip()
+
+# --------- tiny fallback heuristics (kick in when LLM returns empty-ish) -----
+
+HOURS_RE = re.compile(r"(\d{1,3})\s*(?:\+?\s*)?(?:hours?|hrs?)\b", re.I)
+SAL_RE = re.compile(r"(?P<cur>usd|\$|eur|€|gbp|£)?\s*(?P<num>\d{2,3}(?:[,]\d{3})*|\d{4,6})(?:\s*-\s*(?P<num2>\d{2,3}(?:[,]\d{3})*|\d{4,6}))?\s*(?:per\s*(year|yr|hr|hour|month|mo))?", re.I)
+
+def norm(s: str) -> str:
+    return " ".join((s or "").lower().split())
+
+def infer_simple(text: str) -> Dict[str, Any]:
+    """Minimal, fast, and safe extractions for tutoring prompts."""
+    t = norm(text)
+    out: Dict[str, Any] = {}
+
+    # categories
+    if any(w in t for w in ["tutor", "tutoring", "teacher", "teaching"]):
+        out.setdefault("job_categories", []).append("education & tutoring")
+
+    # work_type and hours
+    if any(p in t for p in ["few hours", "couple hours", "hours a week", "part time", "part-time", "pt"]):
+        out["work_type"] = ["part_time"]
+    m = HOURS_RE.search(text)
+    if m:
+        out["availability_hours_per_week"] = int(m.group(1))
+        out.setdefault("work_type", ["part_time"])
+
+    # location kind
+    if any(w in t for w in ["remote", "online", "virtual", "zoom"]):
+        out["location"] = {"type": "remote", "city": None, "radius_km": None}
+    elif "hybrid" in t:
+        out["location"] = {"type": "hybrid", "city": None, "radius_km": None}
+    elif any(w in t for w in ["onsite", "on-site", "in person", "in-person"]):
+        out["location"] = {"type": "onsite", "city": None, "radius_km": None}
+
+    # salary
+    sm = SAL_RE.search(text)
+    if sm:
+        cur = (sm.group("cur") or "USD").upper().replace("$","USD").replace("€","EUR").replace("£","GBP")
+        lo = int(sm.group("num").replace(",", ""))
+        unit = "hour" if lo < 200 else "yr"
+        out["salary_min"] = f"{cur} {lo}/{unit}"
+
+    # default excludes for tutoring
+    out.setdefault("exclude_terms", [])
+    for term in ["unpaid", "internship"]:
+        if term not in out["exclude_terms"]:
+            out["exclude_terms"].append(term)
+
+    return out
+
+def merge_intents(primary: Dict[str, Any], fallback: Dict[str, Any]) -> Dict[str, Any]:
+    """Only fill empty slots from fallback; don’t override non-empty LLM fields."""
+    merged = dict(primary)
+    for k, v in fallback.items():
+        if k not in merged or merged[k] in (None, "", [], {}):
+            merged[k] = v
+    # make arrays unique/sorted
+    for arr_key in ["keywords","must_have","nice_to_have","job_categories","work_type","seniority","exclude_terms"]:
+        if arr_key in merged and isinstance(merged[arr_key], list):
+            merged[arr_key] = sorted({*merged[arr_key]})
+    return merged
+
+def is_too_empty(intent: Intent) -> bool:
+    return (
+        not intent.job_categories and
+        not intent.work_type and
+        intent.location is None and
+        intent.salary_min is None and
+        intent.availability_hours_per_week is None
     )
 
-class IntentCollectorTool(BaseTool):
-    """Tool for collecting job search preferences and building structured intent JSON."""
+# ... keep all your imports, helpers, schemas, etc. above ...
 
-    name: str = "Intent Collector"
-    description: str = (
-        "Guides users through collecting job search preferences including location, "
-        "job categories, experience level, work arrangement, salary expectations, and "
-        "other requirements. Returns a comprehensive structured JSON object."
-    )
-    args_schema: Type[BaseModel] = IntentCollectorInput
+class IntentCollectorTool(_CrewBaseTool):
+    name: str = "IntentCollectorTool"
+    description: str = "LLM-first parser that turns free text into structured job intent JSON with safe fallbacks."
 
-    def _run(self, user_responses: str) -> str:
-        """
-        Collect and structure job search preferences from user responses.
-        
-        Args:
-            user_responses: User's answers to job search questions
-            
-        Returns:
-            JSON string with structured job search intent
-        """
+    # CrewAI (newer) calls `_run`; some older code calls `run`.
+    # We implement both and delegate to a single implementation.
+
+    def _run(self, user_responses: str) -> str:  # CrewAI abstract method
+        return self._run_impl(user_responses)
+
+    def run(self, user_responses: str) -> str:   # Backward-compat
+        return self._run_impl(user_responses)
+
+    def _run_impl(self, user_responses: str) -> str:
+        user_text = user_responses or ""
+        model_name = os.getenv("LLM_MODEL", "gpt-4o-mini")
+        api_key = os.getenv("OPENAI_API_KEY")
+
+        # 1) Try LLM, but fall back safely on *any* error and ALWAYS return JSON
         try:
-            # Initialize the intent structure
-            intent = {
-                "job_search_preferences": {
-                    "location": {
-                        "preferred_locations": [],
-                        "location_flexibility": "",
-                        "willing_to_relocate": None
-                    },
-                    "job_criteria": {
-                        "job_categories": [],
-                        "job_titles": [],
-                        "industry_preferences": [],
-                        "company_size_preference": ""
-                    },
-                    "experience_and_level": {
-                        "experience_level": "",
-                        "years_of_experience": "",
-                        "seniority_level": "",
-                        "leadership_experience": None
-                    },
-                    "work_arrangement": {
-                        "preferred_arrangement": "",
-                        "remote_flexibility": "",
-                        "travel_willingness": ""
-                    },
-                    "compensation": {
-                        "salary_range_min": "",
-                        "salary_range_max": "",
-                        "currency": "USD",
-                        "negotiable": None,
-                        "benefits_priorities": []
-                    },
-                    "senior_specific_needs": {
-                        "management_responsibilities": None,
-                        "team_size_preference": "",
-                        "strategic_vs_tactical_preference": "",
-                        "mentorship_opportunities": None,
-                        "growth_opportunities": []
-                    },
-                    "additional_preferences": {
-                        "company_culture_priorities": [],
-                        "work_life_balance_importance": "",
-                        "learning_development_priorities": [],
-                        "deal_breakers": [],
-                        "must_haves": []
-                    }
-                },
-                "collection_metadata": {
-                    "completion_status": "incomplete",
-                    "missing_fields": [],
-                    "confidence_level": "medium"
-                }
-            }
+            from openai import OpenAI
+            client = OpenAI(api_key=api_key)
+            msgs = build_messages(user_text)
+            resp = client.chat.completions.create(
+                model=model_name,
+                messages=msgs,
+                temperature=0,
+                response_format={"type": "json_object"},
+            )
+            content = resp.choices[0].message.content
+            data = json.loads(extract_json_maybe(content))
+        except Exception:
+            data = {}
 
-            # Process user responses
-            responses = self._parse_responses(user_responses)
-            
-            # Extract information from responses
-            self._extract_location_info(responses, intent)
-            self._extract_job_criteria(responses, intent)
-            self._extract_experience_info(responses, intent)
-            self._extract_work_arrangement(responses, intent)
-            self._extract_compensation(responses, intent)
-            self._extract_senior_needs(responses, intent)
-            self._extract_additional_preferences(responses, intent)
-            
-            # Validate and update completion status
-            self._validate_completeness(intent)
-            
-            return json.dumps(intent, indent=2)
-            
-        except Exception as e:
-            return f"Error processing job search preferences: {str(e)}"
+        # 2) Validate; if “too empty”, apply heuristics
+        try:
+            intent = Intent.model_validate(data)
+        except Exception:
+            intent = Intent()
 
-    def _parse_responses(self, user_responses: str) -> Dict[str, str]:
-        """Parse user responses into a structured format."""
-        responses = {}
-        
-        # Split by common delimiters
-        parts = user_responses.replace(';', '\n').replace('|', '\n').split('\n')
-        
-        # Common question keywords and their mappings
-        question_mapping = {
-            'location': ['location', 'where', 'city', 'state', 'country', 'area'],
-            'job_category': ['category', 'type', 'role', 'position', 'job'],
-            'experience': ['experience', 'years', 'level', 'seniority'],
-            'arrangement': ['remote', 'hybrid', 'office', 'onsite', 'work arrangement'],
-            'salary': ['salary', 'compensation', 'pay', 'money', 'budget'],
-            'management': ['manage', 'lead', 'team', 'supervise', 'direct'],
-            'company': ['company', 'organization', 'culture', 'size'],
-            'benefits': ['benefits', 'perks', 'insurance', 'vacation'],
-            'industry': ['industry', 'sector', 'field', 'domain']
-        }
-        
-        for part in parts:
-            part = part.strip()
-            if not part:
-                continue
-                
-            # Try to categorize the response
-            for category, keywords in question_mapping.items():
-                if any(keyword in part.lower() for keyword in keywords):
-                    if category not in responses:
-                        responses[category] = []
-                    responses[category].append(part)
-        
-        # Also store raw responses
-        responses['raw'] = user_responses
-        
-        return responses
+        if is_too_empty(intent):
+            heuristic = infer_simple(user_text)
+            merged = merge_intents(intent.model_dump(), heuristic)
+            intent = Intent(**merged)
 
-    def _extract_location_info(self, responses: Dict, intent: Dict):
-        """Extract location preferences from responses."""
-        if 'location' in responses:
-            for response in responses['location']:
-                # Extract cities, states, countries
-                location_text = response.lower()
-                if 'remote' in location_text or 'anywhere' in location_text:
-                    intent['job_search_preferences']['location']['location_flexibility'] = 'fully_flexible'
-                elif 'hybrid' in location_text:
-                    intent['job_search_preferences']['location']['location_flexibility'] = 'hybrid_flexible'
-                else:
-                    # Extract specific locations
-                    locations = self._extract_locations_from_text(response)
-                    intent['job_search_preferences']['location']['preferred_locations'].extend(locations)
-
-    def _extract_job_criteria(self, responses: Dict, intent: Dict):
-        """Extract job criteria from responses."""
-        if 'job_category' in responses:
-            for response in responses['job_category']:
-                categories = self._extract_job_categories(response)
-                intent['job_search_preferences']['job_criteria']['job_categories'].extend(categories)
-                
-        if 'industry' in responses:
-            for response in responses['industry']:
-                industries = self._extract_industries(response)
-                intent['job_search_preferences']['job_criteria']['industry_preferences'].extend(industries)
-
-    def _extract_experience_info(self, responses: Dict, intent: Dict):
-        """Extract experience information from responses."""
-        if 'experience' in responses:
-            for response in responses['experience']:
-                exp_info = self._parse_experience(response)
-                intent['job_search_preferences']['experience_and_level'].update(exp_info)
-
-    def _extract_work_arrangement(self, responses: Dict, intent: Dict):
-        """Extract work arrangement preferences."""
-        if 'arrangement' in responses:
-            for response in responses['arrangement']:
-                arrangement = self._parse_work_arrangement(response)
-                intent['job_search_preferences']['work_arrangement'].update(arrangement)
-
-    def _extract_compensation(self, responses: Dict, intent: Dict):
-        """Extract compensation information."""
-        if 'salary' in responses:
-            for response in responses['salary']:
-                comp_info = self._parse_compensation(response)
-                intent['job_search_preferences']['compensation'].update(comp_info)
-
-    def _extract_senior_needs(self, responses: Dict, intent: Dict):
-        """Extract senior-specific needs."""
-        if 'management' in responses:
-            for response in responses['management']:
-                mgmt_info = self._parse_management_preferences(response)
-                intent['job_search_preferences']['senior_specific_needs'].update(mgmt_info)
-
-    def _extract_additional_preferences(self, responses: Dict, intent: Dict):
-        """Extract additional preferences."""
-        if 'company' in responses:
-            for response in responses['company']:
-                company_prefs = self._parse_company_preferences(response)
-                intent['job_search_preferences']['additional_preferences'].update(company_prefs)
-
-    def _extract_locations_from_text(self, text: str) -> List[str]:
-        """Extract location names from text."""
-        # Simple extraction - in practice, you might use more sophisticated NLP
-        locations = []
-        text_lower = text.lower()
-        
-        # Common location patterns
-        if 'san francisco' in text_lower or 'sf' in text_lower:
-            locations.append('San Francisco, CA')
-        if 'new york' in text_lower or 'nyc' in text_lower:
-            locations.append('New York, NY')
-        if 'seattle' in text_lower:
-            locations.append('Seattle, WA')
-        if 'austin' in text_lower:
-            locations.append('Austin, TX')
-        if 'denver' in text_lower:
-            locations.append('Denver, CO')
-        if 'chicago' in text_lower:
-            locations.append('Chicago, IL')
-        if 'boston' in text_lower:
-            locations.append('Boston, MA')
-        if 'los angeles' in text_lower or 'la' in text_lower:
-            locations.append('Los Angeles, CA')
-            
-        return locations
-
-    def _extract_job_categories(self, text: str) -> List[str]:
-        """Extract job categories from text."""
-        categories = []
-        text_lower = text.lower()
-        
-        category_keywords = {
-            'Software Engineering': ['software', 'developer', 'programming', 'coding', 'backend', 'frontend', 'fullstack'],
-            'Data Science': ['data scientist', 'data analysis', 'machine learning', 'ai', 'analytics'],
-            'Product Management': ['product manager', 'product', 'pm', 'product management'],
-            'Engineering Management': ['engineering manager', 'tech lead', 'team lead', 'engineering leadership'],
-            'DevOps': ['devops', 'infrastructure', 'sre', 'platform', 'cloud'],
-            'Design': ['designer', 'ux', 'ui', 'user experience', 'user interface'],
-            'Marketing': ['marketing', 'growth', 'digital marketing', 'content'],
-            'Sales': ['sales', 'business development', 'account management'],
-            'Consulting': ['consultant', 'consulting', 'advisory'],
-            'Teaching': ['teacher', 'professor', 'tutor','educator'],
-            'Coaching': ['coach', 'sports coach', 'trainer','life coach']
-        }
-        
-        for category, keywords in category_keywords.items():
-            if any(keyword in text_lower for keyword in keywords):
-                categories.append(category)
-        print(f"categores {categories}")
-        return categories
-
-    def _extract_industries(self, text: str) -> List[str]:
-        """Extract industries from text."""
-        industries = []
-        text_lower = text.lower()
-        
-        industry_keywords = {
-            'Technology': ['tech', 'technology', 'software', 'saas', 'startup'],
-            'Finance': ['finance', 'fintech', 'banking', 'investment'],
-            'Healthcare': ['healthcare', 'medical', 'biotech', 'pharma'],
-            'E-commerce': ['ecommerce', 'retail', 'marketplace'],
-            'Education': ['education', 'edtech', 'learning','teaching','lecturing','tutoring'],
-            'Media': ['media', 'entertainment', 'publishing','writing'],
-            'Consulting': ['consulting', 'professional services']
-        }
-        
-        for industry, keywords in industry_keywords.items():
-            if any(keyword in text_lower for keyword in keywords):
-                industries.append(industry)
-                
-        return industries
-
-    def _parse_experience(self, text: str) -> Dict[str, Any]:
-        """Parse experience information from text."""
-        exp_info = {}
-        text_lower = text.lower()
-        
-        # Extract years of experience
-        import re
-        years_match = re.search(r'(\d+)\s*(?:years?|yrs?)', text_lower)
-        if years_match:
-            exp_info['years_of_experience'] = years_match.group(1)
-        
-        # Experience levels
-        if any(word in text_lower for word in ['senior', 'sr', 'lead', 'principal']):
-            exp_info['experience_level'] = 'senior'
-            exp_info['seniority_level'] = 'senior'
-        elif any(word in text_lower for word in ['mid', 'intermediate']):
-            exp_info['experience_level'] = 'mid'
-            exp_info['seniority_level'] = 'mid-level'
-        elif any(word in text_lower for word in ['junior', 'entry', 'jr']):
-            exp_info['experience_level'] = 'junior'
-            exp_info['seniority_level'] = 'entry-level'
-        
-        return exp_info
-
-    def _parse_work_arrangement(self, text: str) -> Dict[str, Any]:
-        """Parse work arrangement preferences."""
-        arrangement = {}
-        text_lower = text.lower()
-        
-        if 'remote' in text_lower:
-            if 'full' in text_lower or 'completely' in text_lower:
-                arrangement['preferred_arrangement'] = 'fully_remote'
-            else:
-                arrangement['preferred_arrangement'] = 'remote'
-        elif 'hybrid' in text_lower:
-            arrangement['preferred_arrangement'] = 'hybrid'
-        elif 'office' in text_lower or 'onsite' in text_lower:
-            arrangement['preferred_arrangement'] = 'onsite'
-        else:
-            arrangement['preferred_arrangement'] = 'flexible'
-        
-        if 'travel' in text_lower:
-            if 'no travel' in text_lower or 'minimal' in text_lower:
-                arrangement['travel_willingness'] = 'minimal'
-            elif 'some travel' in text_lower:
-                arrangement['travel_willingness'] = 'moderate'
-            elif 'frequent' in text_lower or 'extensive' in text_lower:
-                arrangement['travel_willingness'] = 'high'
-        
-        return arrangement
-
-    def _parse_compensation(self, text: str) -> Dict[str, Any]:
-        """Parse compensation information."""
-        comp_info = {}
-        text_lower = text.lower()
-        
-        # Extract salary ranges
-        import re
-        salary_pattern = r'\$?(\d+)(?:k|,000)?\s*(?:-|to)\s*\$?(\d+)(?:k|,000)?'
-        salary_match = re.search(salary_pattern, text_lower)
-        
-        if salary_match:
-            min_sal = salary_match.group(1)
-            max_sal = salary_match.group(2)
-            
-            # Convert k notation
-            if 'k' in text_lower:
-                min_sal = str(int(min_sal) * 1000)
-                max_sal = str(int(max_sal) * 1000)
-            
-            comp_info['salary_range_min'] = min_sal
-            comp_info['salary_range_max'] = max_sal
-        
-        # Single salary value
-        single_salary = re.search(r'\$?(\d+)k?', text_lower)
-        if single_salary and not salary_match:
-            salary = single_salary.group(1)
-            if 'k' in text_lower:
-                salary = str(int(salary) * 1000)
-            comp_info['salary_range_min'] = salary
-        
-        return comp_info
-
-    def _parse_management_preferences(self, text: str) -> Dict[str, Any]:
-        """Parse management and leadership preferences."""
-        mgmt_info = {}
-        text_lower = text.lower()
-        
-        if any(word in text_lower for word in ['manage', 'lead', 'supervise', 'direct']):
-            mgmt_info['management_responsibilities'] = True
-        
-        # Team size preferences
-        if 'small team' in text_lower:
-            mgmt_info['team_size_preference'] = 'small (2-5 people)'
-        elif 'large team' in text_lower:
-            mgmt_info['team_size_preference'] = 'large (10+ people)'
-        elif 'medium team' in text_lower:
-            mgmt_info['team_size_preference'] = 'medium (5-10 people)'
-        
-        return mgmt_info
-
-    def _parse_company_preferences(self, text: str) -> Dict[str, Any]:
-        """Parse company and culture preferences."""
-        company_prefs = {}
-        text_lower = text.lower()
-        
-        culture_priorities = []
-        if 'collaborative' in text_lower:
-            culture_priorities.append('collaborative')
-        if 'innovative' in text_lower:
-            culture_priorities.append('innovative')
-        if 'work-life balance' in text_lower:
-            culture_priorities.append('work-life balance')
-        if 'fast-paced' in text_lower:
-            culture_priorities.append('fast-paced')
-        if 'learning' in text_lower:
-            culture_priorities.append('learning-oriented')
-        
-        if culture_priorities:
-            company_prefs['company_culture_priorities'] = culture_priorities
-        
-        return company_prefs
-
-    def _validate_completeness(self, intent: Dict):
-        """Validate completeness of collected information."""
-        missing_fields = []
-        prefs = intent['job_search_preferences']
-        
-        # Check required fields
-        if not prefs['location']['preferred_locations'] and not prefs['location']['location_flexibility']:
-            missing_fields.append('location_preferences')
-        
-        if not prefs['job_criteria']['job_categories']:
-            missing_fields.append('job_categories')
-        
-        if not prefs['experience_and_level']['experience_level']:
-            missing_fields.append('experience_level')
-        
-        if not prefs['work_arrangement']['preferred_arrangement']:
-            missing_fields.append('work_arrangement')
-        
-        # Update metadata
-        intent['collection_metadata']['missing_fields'] = missing_fields
-        intent['collection_metadata']['completion_status'] = 'complete' if not missing_fields else 'incomplete'
-        intent['collection_metadata']['confidence_level'] = 'high' if len(missing_fields) <= 1 else 'medium' if len(missing_fields) <= 3 else 'low'
+        # 3) Final JSON string (never empty / never non-JSON)
+        return intent.model_dump_json(exclude_none=True, ensure_ascii=False)

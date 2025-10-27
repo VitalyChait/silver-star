@@ -6,6 +6,7 @@ import json
 import xml.etree.ElementTree as ET
 from datetime import datetime
 import re
+from tools.craigslist_scraper import fetch_craigslist
 
 class JobSearchIntentInput(BaseModel):
     """Input schema for JobFetchers Tool."""
@@ -27,88 +28,95 @@ class JobFetchersTool(BaseTool):
 
     def _run(self, intent_json: str) -> str:
         """
-        Fetches jobs from multiple sources based on intent criteria.
-        
-        Note: For security reasons, this implementation focuses on:
-        - RSS feed parsing using safe XML parsing
-        - REST API calls to public job board APIs
-        - Basic web requests (no complex scraping)
-        
-        Email processing and advanced web scraping are excluded for security.
+        Fetch jobs from multiple sources based on intent criteria.
+        Uses Craigslist (jobs + gigs + services fallbacks) via ScrapingBee.
         """
         try:
-            # Parse the intent JSON
-            intent_data = json.loads(intent_json)
-            
-            # Extract search criteria
-            keywords = intent_data.get('keywords', [])
-            location = intent_data.get('location', '')
-            salary_min = intent_data.get('salary_min', 0)
-            salary_max = intent_data.get('salary_max', 999999)
-            experience_level = intent_data.get('experience_level', '')
-            job_type = intent_data.get('job_type', '')  # full-time, part-time, contract
-            remote_ok = intent_data.get('remote_ok', False)
-            
+            raw_intent = json.loads(intent_json)
+
+            # --- Craigslist via ScrapingBee (multi-category fallbacks) ---
+            # NEW signature: returns (jobs, attempted_urls, hit_urls, errors)
+            from tools.craigslist_scraper import fetch_craigslist
+            cl_jobs, cl_attempted, cl_hits, cl_errors = fetch_craigslist(raw_intent)
+
             all_jobs = []
             fetch_results = {
-                'successful_sources': [],
-                'failed_sources': [],
-                'total_jobs_found': 0
+                "successful_sources": [],
+                "failed_sources": [],
+                "total_jobs_found": 0,
+                "craigslist_attempted": cl_attempted,  # all URLs we tried
+                "craigslist_hits": cl_hits,            # URLs that yielded results
+                "craigslist_errors": cl_errors,        # [{"url","error"}, ...]
             }
-            
-            # 1. Fetch from RSS feeds
-            rss_jobs, rss_success = self._fetch_from_rss_feeds(keywords, location)
-            all_jobs.extend(rss_jobs)
-            if rss_success:
-                fetch_results['successful_sources'].append('RSS feeds')
+
+            # Map Craigslist results to your raw format for standardization
+            if cl_jobs:
+                fetch_results["successful_sources"].append("Craigslist")
+                for j in cl_jobs:
+                    all_jobs.append({
+                        "title": j.get("title") or "N/A",
+                        "company": j.get("company") or "N/A",
+                        "location": j.get("location") or "N/A",
+                        "description": j.get("snippet") or "",
+                        "salary": "N/A",
+                        "url": j.get("apply_url") or "",
+                        "date_posted": j.get("posted_at") or "N/A",
+                        "source": "Craigslist",
+                        "source_url": j.get("source_url") or "",
+                        "job_type": "N/A",
+                    })
             else:
-                fetch_results['failed_sources'].append('RSS feeds')
-            
-            # 2. Fetch from job board APIs (simulated/demo endpoints)
-            api_jobs, api_success = self._fetch_from_job_apis(keywords, location)
-            all_jobs.extend(api_jobs)
-            if api_success:
-                fetch_results['successful_sources'].append('Job board APIs')
-            else:
-                fetch_results['failed_sources'].append('Job board APIs')
-            
-            # 3. Standardize job data format
+                fetch_results["failed_sources"].append("Craigslist")
+
+            # ---- Standardize -> Filter -> Rank ----
             standardized_jobs = self._standardize_job_data(all_jobs)
-            
-            # 4. Filter and rank based on intent criteria
+
+            keywords = raw_intent.get("keywords", [])
+            loc_obj = raw_intent.get("location", "")
+            location = loc_obj.get("city") if isinstance(loc_obj, dict) else (loc_obj or "")
+            salary_min = raw_intent.get("salary_min", 0)
+            salary_max = raw_intent.get("salary_max", 999999)
+            experience_level = raw_intent.get("experience_level", "")
+            work_type = raw_intent.get("work_type") or []
+            job_type = (work_type[0] if isinstance(work_type, list) and work_type else work_type) or ""
+            remote_ok = (
+                isinstance(loc_obj, dict) and (loc_obj.get("type", "").lower() == "remote")
+            ) or (isinstance(loc_obj, str) and loc_obj.strip().lower() == "remote")
+
             filtered_jobs = self._filter_jobs(
-                standardized_jobs, keywords, location, salary_min, 
-                salary_max, experience_level, job_type, remote_ok
+                standardized_jobs, keywords, location, salary_min, salary_max,
+                experience_level, job_type, remote_ok
             )
-            
-            # 5. Rank results
-            ranked_jobs = self._rank_jobs(filtered_jobs, intent_data)
-            
-            fetch_results['total_jobs_found'] = len(ranked_jobs)
-            
-            # Prepare final response
+            ranked_jobs = self._rank_jobs(filtered_jobs, raw_intent)
+            fetch_results["total_jobs_found"] = len(ranked_jobs)
+
             response = {
-                'status': 'success',
-                'fetch_summary': fetch_results,
-                'jobs_found': len(ranked_jobs),
-                'jobs': ranked_jobs[:50],  # Limit to top 50 results
-                'search_criteria': {
-                    'keywords': keywords,
-                    'location': location,
-                    'salary_range': f"${salary_min} - ${salary_max}",
-                    'experience_level': experience_level,
-                    'job_type': job_type,
-                    'remote_ok': remote_ok
-                }
+                "status": "success",
+                "fetch_summary": fetch_results,
+                "jobs_found": len(ranked_jobs),
+                "jobs": ranked_jobs[:50],
+                "search_criteria": {
+                    "keywords": keywords,
+                    "location": location,
+                    "salary_range": f"${salary_min} - ${salary_max}",
+                    "experience_level": experience_level,
+                    "job_type": job_type,
+                    "remote_ok": remote_ok,
+                },
+                "craigslist": {
+                    "attempted": cl_attempted,
+                    "hits": cl_hits,
+                    "errors": cl_errors,
+                },
             }
-            
             return json.dumps(response, indent=2)
-            
+
         except json.JSONDecodeError as e:
             return f"Error: Invalid JSON format in intent_json: {str(e)}"
         except Exception as e:
             return f"Error fetching jobs: {str(e)}"
-    
+
+
     def _fetch_from_rss_feeds(self, keywords: List[str], location: str) -> tuple:
         """Fetch jobs from RSS feeds (safe XML parsing only)."""
         try:
@@ -300,43 +308,36 @@ class JobFetchersTool(BaseTool):
         remote_keywords = ['remote', 'work from home', 'telecommute', 'distributed', 'wfh']
         return any(keyword in text_lower for keyword in remote_keywords)
     
-    def _filter_jobs(self, jobs: List[Dict], keywords: List[str], location: str, 
-                     salary_min: int, salary_max: int, experience_level: str, 
-                     job_type: str, remote_ok: bool) -> List[Dict]:
-        """Filter jobs based on user criteria."""
+    
+    
+    def _filter_jobs(self, jobs, keywords, location, salary_min, salary_max, experience_level, job_type, remote_ok):
         filtered = []
-        
         for job in jobs:
-            # Keyword matching
             if keywords:
                 title_desc = (job['title'] + ' ' + job['description']).lower()
-                if not any(keyword.lower() in title_desc for keyword in keywords):
+                if not any(k.lower() in title_desc for k in keywords):
                     continue
-            
-            # Location filtering
+
             if location and location.lower() not in job['location'].lower() and not job['remote_ok']:
                 continue
-            
-            # Salary filtering
+
             job_salary = job['salary']
-            if (job_salary['min'] > 0 and job_salary['max'] > 0 and 
-                not (salary_min <= job_salary['max'] and salary_max >= job_salary['min'])):
+            if (
+                job_salary['min'] > 0 and job_salary['max'] > 0 and
+                not (salary_min <= job_salary['max'] and salary_max >= job_salary['min'])
+            ):
                 continue
-            
-            # Experience level filtering
+
             if experience_level and experience_level != job['experience_level'] and job['experience_level'] != 'unknown':
                 continue
-            
-            # Job type filtering
-            if job_type and job_type.lower() not in job['job_type'].lower():
+
+            if job_type and job_type.replace('_','-').lower() not in job['job_type'].lower():
                 continue
-            
-            # Remote work filtering
+
             if remote_ok and not job['remote_ok']:
                 continue
-            
+
             filtered.append(job)
-        
         return filtered
     
     def _rank_jobs(self, jobs: List[Dict], intent_data: Dict) -> List[Dict]:
