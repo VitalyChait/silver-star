@@ -1,87 +1,99 @@
-# silver-star
+# SilverStar
 
-<img width="1088" height="960" alt="silver_star_logo" src="https://github.com/user-attachments/assets/1961ad11-1dee-4fc5-941d-17306c309d38" />
-
-
-This repo contains the Silver Star MVP: a simple FastAPI backend and a Next.js frontend for a job board connecting senior professionals with meaningful work.
+SilverStar is a job application platform that connects experienced professionals with suitable job opportunities. The platform features an AI-powered chatbot that helps candidates find relevant positions based on their skills, preferences, and availability.
 
 ## Features
 
-- Job board with search functionality
-- User authentication
-- **AI-powered chatbot for job recommendations** (NEW!)
-- Voice interaction with the chatbot
-- Personalized job matching based on candidate profile
+- User authentication and profile management
+- AI-powered job recommendations via chatbot
+- Voice interaction support for the chatbot
+- Job scraping from USAJOBS
+- Modern, responsive UI with custom star cursor
 
-## Run the App (Local Dev)
+## Quick Start
 
-Prerequisites
-- Python 3.11+
-- Node.js 18+
+The easiest way to get started is to use our automated setup script:
 
-### 1) Backend API (FastAPI)
+```bash
+# Clone the repository
+git clone <repository-url>
+cd silver-star
 
-Location: `code/backend/server`
+# Run the setup and start script
+./setup_and_run.sh
+```
 
-Steps
-1. Create a virtual environment and install dependencies
-   - `cd code/backend/server`
-   - `python -m venv .venv && source .venv/bin/activate` (Use python3 if python command does not work)
-   - `pip install -r requirements.txt`
-2. (Optional) Configure env vars
-   - Copy `.env.example` to `.env` and adjust if needed
-   - Default DB is SQLite: `sqlite:///./data.db`
-3. Configure LLM settings
-   - Create `code/backend/llm/.llm_config` with your API keys (see `code/backend/llm/README.md`)
-4. Start the server
-   - `uvicorn app.main:app --reload --port 8000`
-5. Verify
-   - API docs: `http://localhost:8000/docs`
-   - Health: `http://localhost:8000/health`
+This single script will:
+1. Install all Python dependencies
+2. Set up the LLM configuration file
+3. Initialize the database with sample jobs
+4. Start both the backend and frontend servers
+5. Clean up any unnecessary files
 
-Common API endpoints
-- `POST /api/auth/register` — Register user `{email, password}`
-- `POST /api/auth/token` — Get JWT (OAuth2 password)
-- `GET /api/jobs/` — List/search jobs (`?q=keyword`)
-- `POST /api/jobs/` — Create job (requires Bearer token)
-- `POST /api/chatbot/chat` — Send text message to chatbot
-- `POST /api/chatbot/voice` — Send voice message to chatbot
+## Manual Setup
 
-### 2) Frontend (Next.js)
+If you prefer to set up manually:
 
-Location: `code/frontend`
+### 1. Backend Setup
 
-Steps
-1. Install deps and run dev server
-   - Open a new terminal
-   - `cd code/frontend`
-   - `npm install`
-   - `npm run dev`
-2. Open the app
-   - `http://localhost:3000`
-   - Chatbot: `http://localhost:3000/chatbot`
+```bash
+cd code/backend
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 
-Notes
-- Frontend rewrites `/api/*` to the backend at `http://localhost:8000/*` during dev (see `code/frontend/next.config.js`).
-- Start backend first, then the frontend.
+# Configure LLM API keys
+cp app/llm/.llm_config.example app/llm/.llm_config
+# Edit app/llm/.llm_config with your actual API keys
 
-### 3) Chatbot Feature
+# Initialize database
+python populate_jobs.py
 
-The AI-powered chatbot helps candidates find suitable jobs by:
-1. Collecting candidate information (name, location, job preferences, skills, availability)
-2. Providing personalized job recommendations based on their profile
-3. Supporting both text and voice interactions
+# Start the server
+python start_server.py
+```
 
-The chatbot uses Google's Gemini AI for natural language processing and job matching.
+### 2. Frontend
 
-Troubleshooting
-- 
+The frontend consists of static HTML files that can be served by any web server. To run a simple server:
 
-## Project Docs
-- Roadmap: `non-code/roadmap.md`
-- Stack proposal (optional A): `non-code/arch/stack/optional_a.html`
-- LLM Module: `code/backend/llm/README.md`
+```bash
+cd code/frontend
+python -m http.server 3000
+```
 
-## Subproject READMEs
-- Backend: `code/backend/server/README.md`
-- Frontend: `code/frontend/README.md`
+## Accessing the Application
+
+Once running, you can access:
+
+- Main page: http://localhost:3000/silverstar.html
+- Chatbot: http://localhost:3000/chatbot.html
+- API documentation: http://localhost:8000/docs
+
+## Configuration
+
+### LLM Configuration
+
+The application uses Google's Gemini API for the chatbot functionality. You'll need to:
+
+1. Get an API key from [Google AI Studio](https://aistudio.google.com/app/apikey)
+2. Edit `code/backend/app/llm/.llm_config` and replace `your_gemini_api_key_here` with your actual API key
+
+### Database
+
+The application uses SQLite by default, with the database file stored at `code/backend/data.db`. The database is automatically initialized with sample jobs on first run.
+
+## Architecture
+
+- **Backend**: FastAPI with SQLAlchemy ORM
+- **Frontend**: Vanilla HTML, CSS, and JavaScript
+- **AI Integration**: Google Gemini API
+- **Job Scraping**: USAJOBS API
+
+## Development
+
+The backend server supports hot reloading during development. Changes to Python files will automatically restart the server.
+
+## License
+
+This project is licensed under the terms specified in the [LICENSE](LICENSE) file.

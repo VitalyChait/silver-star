@@ -1,0 +1,66 @@
+# --- OS / Editor ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+code/backend/venv/
+
+# Env and secrets
+.env
+*.env
+code/backend/app/llm/.llm_config
+code/backend/app/llm/.llm_cache
+code/backend/app/llm/.credentials
+code/backend/app/llm/credentials.json
+
+# Databases and local storage
+*.sqlite3
+*.sqlite
+data.db
+code/backend/data.db
+
+# Logs
+logs/
+*.log
+
+# Testing / tooling caches
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.cache/
+.pytest_cache/
+.mypy_cache/
+.pyre/
+.dmypy.json
+.pytype/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# Node (if used later)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

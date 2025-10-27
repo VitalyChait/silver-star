@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SilverStar - Experience Meets Opportunity</title>
+    <!-- Tailwind CSS CDN --><script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts - Inter --><link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <style>
+        /* Base styles */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* Charcoal (bg-gray-900) */
+            color: #D1D5DB; /* Silver (text-gray-300) */
+            cursor: none; /* Hide the default cursor */
+            overflow: hidden; /* Prevent scrolling */
+        }
+
+        /* Custom "SilverStar" cursor */
+        #custom-cursor {
+            position: fixed;
+            width: 2vw; /* Use viewport width for relative sizing */
+            height: 2vw; /* Use viewport width for relative sizing */
+            background: #E5E7EB; /* silver/gray-200 */
+            /* Star shape */
+            clip-path: polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%);
+            transform: translate(-50%, -50%); /* Center on mouse */
+            pointer-events: none; /* Allow clicking "through" the cursor */
+            transition: all 0.1s ease-out;
+            z-index: 9999;
+        }
+
+        /* Interaction: Grow cursor and button on hover */
+        #custom-cursor.cursor-interact {
+            transform: translate(-50%, -50%) scale(1.5) rotate(72deg);
+        }
+
+        .button-interact-grow {
+            transform: scale(1.05);
+            box-shadow: 0 0 30px rgba(229, 231, 235, 0.5); /* Glowing effect */
+        }
+
+        /* Hide class for modals/sections */
+        .hidden {
+            display: none;
+        }
+
+        /* Starry loading animation */
+        .llm-star {
+            width: 0.2vw; /* Use viewport width for relative sizing */
+            height: 0.2vw; /* Use viewport width for relative sizing */
+            background: white;
+            border-radius: 50%;
+            position: absolute;
+            box-shadow: 0 0 0.3vw white, 0 0 0.5vw white; /* Use viewport width for relative sizing */
+            animation: twinkle 1.5s infinite ease-in-out;
+        }
+
+        .llm-star:nth-child(1) { top: 20%; left: 30%; animation-delay: 0s; }
+        .llm-star:nth-child(2) { top: 40%; left: 60%; animation-delay: 0.3s; }
+        .llm-star:nth-child(3) { top: 60%; left: 20%; animation-delay: 0.6s; }
+        .llm-star:nth-child(4) { top: 70%; left: 80%; animation-delay: 0.9s; }
+        .llm-star:nth-child(5) { top: 30%; left: 75%; animation-delay: 1.2s; }
+
+        @keyframes twinkle {
+            0%, 100% { opacity: 0.2; transform: scale(0.8); }
+            50% { opacity: 1; transform: scale(1.2); }
+        }
+
+        /* --- Background Stars Logic --- */
+        .bg-star {
+            position: absolute;
+            width: 0.15vw; /* Use viewport width for relative sizing */
+            height: 0.15vw; /* Use viewport width for relative sizing */
+            background: rgba(255, 255, 255, 0.7);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 0; /* Ensure stars are behind content */
+            opacity: 0; /* Start invisible */
+        }
+
+        .star-animation {
+            animation: moveAndAbsorbStar var(--duration) linear forwards;
+        }
+
+        @keyframes moveAndAbsorbStar {
+            0% { 
+                transform: translate(0, 0) scale(1); 
+                opacity: 0.7; 
+            }
+            70% { /* Maintain size and opacity for most of the journey */
+                opacity: 1; 
+                transform: translate(var(--dx), var(--dy)) scale(1);
+            }
+            100% { 
+                opacity: 0; 
+                transform: translate(var(--dx), var(--dy)) scale(0.2); /* Shrink and fade at destination */
+            }
+        }
+        
+        /* Dynamic background gradient animation */
+        .dynamic-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(45deg, #111827, #1f2937, #111827, #1f2937);
+            background-size: 400% 400%;
+            animation: gradientShift 15s ease infinite;
+            z-index: -1;
+        }
+        
+        @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        /* Floating particles for additional dynamic effect */
+        .particle {
+            position: absolute;
+            background: rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 0;
+            width: 0.2vw; /* Use viewport width for relative sizing */
+            height: 0.2vw; /* Use viewport width for relative sizing */
+        }
+        
+        .particle-animation {
+            animation: floatUp 10s linear infinite;
+        }
+        
+        @keyframes floatUp {
+            0% {
+                transform: translateY(100vh) translateX(0);
+                opacity: 0;
+            }
+            10% {
+                opacity: 1;
+            }
+            90% {
+                opacity: 1;
+            }
+            100% {
+                transform: translateY(-100vh) translateX(100px);
+                opacity: 0;
+            }
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <!-- Dynamic Background --><div class="dynamic-bg"></div>
+    
+    <!-- Background Stars Container --><div id="star-container" class="fixed inset-0 pointer-events-none z-0"></div>
+    
+    <!-- Floating Particles Container --><div id="particle-container" class="fixed inset-0 pointer-events-none z-0"></div>
+
+    <!-- Custom SilverStar Cursor --><div id="custom-cursor"></div>
+
+    <!-- Main Container --><div class="relative min-h-screen flex flex-col items-center justify-center p-8 overflow-hidden z-10">
+
+        <!-- Header --><header class="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-20">
+            <div class="flex items-center">
+                <img src="public/assets/logo.png" alt="SilverStar Logo" class="h-10 w-auto">
+            </div>
+            <nav class="flex gap-4">
+                <button id="open-signin" class="interactive-target text-gray-300 hover:text-white transition-colors duration-200 text-lg">Sign In</button>
+                <button id="open-register" class="interactive-target bg-gray-200 text-gray-900 px-5 py-2 rounded-lg font-medium hover:bg-white transition-all duration-200">Register</button>
+            </nav>
+        </header>
+
+        <!-- Hero Section --><section id="hero-section" class="text-center transition-opacity duration-500 z-10">
+            <h2 class="text-5xl md:text-6xl font-bold text-gray-100 mb-4">Let Your Experience Shine</h2>
+            <h2 class="text-2xl md:text-2xl font-bold text-gray-100 mb-4">Your next chapter of work starts here</h2>
+            <button id="job-button" class="interactive-target bg-gray-200 text-gray-900 text-2xl font-bold px-16 py-6 rounded-full shadow-2xl hover:bg-white transition-all duration-300 ease-in-out z-20">
+                Job Now
+            </button>
+        </section>
+
+        <!-- Loading Section (Initially Hidden) --><section id="loading-section" class="hidden text-center transition-opacity duration-500 z-10">
+            <div class="relative w-48 h-48 flex items-center justify-center">
+                <!-- Stars for "LLM chat with stars" --><div class="llm-star"></div>
+                <div class="llm-star"></div>
+                <div class="llm-star"></div>
+                <div class="llm-star"></div>
+                <div class="llm-star"></div>
+            </div>
+            <h2 class="text-2xl font-medium text-gray-200 mt-8">Finding relevant jobs for you...</h2>
+            <p class="text-gray-400">Our SilverStar AI is scanning the area.</p>
+        </section>
+
+        <!-- Results Section (Initially Hidden) --><section id="results-section" class="hidden transition-opacity duration-500 text-center max-w-4xl w-full z-10">
+            <h2 class="text-4xl font-bold text-gray-100 mb-8">Your Curated Opportunities</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <!-- Mock Job 1 --><div class="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700 text-left">
+                    <h3 class="text-xl font-bold text-white">Part-Time Accountant</h3>
+                    <p class="text-gray-400 mb-2">Fintech Solutions Inc.</p>
+                    <p class="text-gray-300">Manage ledgers and assist with quarterly reports. Flexible 15-20 hrs/week.</p>
+                </div>
+                <!-- Mock Job 2 --><div class="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700 text-left">
+                    <h3 class="text-xl font-bold text-white">Community Liaison</h3>
+                    <p class="text-gray-400 mb-2">Wellesley Public Library</p>
+                    <p class="text-gray-300">Organize and promote adult learning programs. Strong communication skills valued.</p>
+                </div>
+                <!-- Mock Job 3 --><div class="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700 text-left">
+                    <h3 class="text-xl font-bold text-white">Senior Admin Assistant</h3>
+                    <p class="text-gray-400 mb-2">Local Health Clinic</p>
+                    <p class="text-gray-300">Support clinic operations, scheduling, and patient intake. 3 days a week.</p>
+                </div>
+            </div>
+            <button id="search-again" class="mt-12 text-gray-300 hover:text-white transition-colors duration-200 text-lg underline">Search Again</button>
+        </section>
+
+    </div>
+
+    <!-- Sign In Modal (Initially Hidden) --><div id="signInModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 p-8 rounded-lg shadow-2xl w-full max-w-md relative border border-gray-700">
+            <button id="close-signin" class="interactive-target absolute top-4 right-4 text-gray-400 hover:text-white text-2xl">&times;</button>
+            <h2 class="text-3xl font-bold text-white mb-6 text-center">Sign In to SilverStar</h2>
+            <form>
+                <div class="mb-4">
+                    <label for="signin-email" class="block text-sm font-medium text-gray-300 mb-2">Email</label>
+                    <input type="email" id="signin-email" class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 text-white focus:outline-none focus:ring-2 focus:ring-gray-400">
+                </div>
+                <div class="mb-6">
+                    <label for="signin-password" class="block text-sm font-medium text-gray-300 mb-2">Password</label>
+                    <input type="password" id="signin-password" class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 text-white focus:outline-none focus:ring-2 focus:ring-gray-400">
+                </div>
+                <button type="submit" class="interactive-target w-full bg-gray-200 text-gray-900 py-3 rounded-lg font-medium text-lg hover:bg-white transition-all duration-200">Sign In</button>
+            </form>
+            <p class="text-center text-gray-400 mt-6">
+                New here? <button id="switch-to-register" class="font-medium text-gray-300 hover:text-white underline">Create an account</button>
+            </p>
+        </div>
+    </div>
+
+    <!-- Register Modal (Initially Hidden) --><div id="registerModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+        <div class="bg-gray-800 p-8 rounded-lg shadow-2xl w-full max-w-md relative border border-gray-700">
+            <button id="close-register" class="interactive-target absolute top-4 right-4 text-gray-400 hover:text-white text-2xl">&times;</button>
+            <h2 class="text-3xl font-bold text-white mb-6 text-center">Join SilverStar</h2>
+            <form>
+                <div class="mb-4">
+                    <label for="register-name" class="block text-sm font-medium text-gray-300 mb-2">Name</label>
+                    <input type="text" id="register-name" class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 text-white focus:outline-none focus:ring-2 focus:ring-gray-400">
+                </div>
+                <div class="mb-4">
+                    <label for="register-email" class="block text-sm font-medium text-gray-300 mb-2">Email</label>
+                    <input type="email" id="register-email" class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 text-white focus:outline-none focus:ring-2 focus:ring-gray-400">
+                </div>
+                <div class="mb-6">
+                    <label for="register-password" class="block text-sm font-medium text-gray-300 mb-2">Password</label>
+                    <input type="password" id="register-password" class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 text-white focus:outline-none focus:ring-2 focus:ring-gray-400">
+                </div>
+                <button type="submit" class="interactive-target w-full bg-gray-200 text-gray-900 py-3 rounded-lg font-medium text-lg hover:bg-white transition-all duration-200">Create Account</button>
+            </form>
+            <p class="text-center text-gray-400 mt-6">
+                Already have an account? <button id="switch-to-signin" class="font-medium text-gray-300 hover:text-white underline">Sign in</button>
+            </p>
+        </div>
+    </div>
+
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // --- Authentication State ---
+            let currentUser = null;
+            const API_BASE_URL = 'http://localhost:8000/api';
+            
+            // Check if user is already logged in (from localStorage)
+            const token = localStorage.getItem('silverstar_token');
+            if (token) {
+                // Verify token with server
+                fetch(`${API_BASE_URL}/profile`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                })
+                .then(response => {
+                    if (response.ok) {
+                        return response.json();
+                    } else {
+                        throw new Error('Invalid token');
+                    }
+                })
+                .then(data => {
+                    currentUser = data;
+                    updateUIForLoggedInUser();
+                })
+                .catch(error => {
+                    console.error('Token validation error:', error);
+                    localStorage.removeItem('silverstar_token');
+                });
+            }
+            
+            // --- Custom Cursor Logic ---
+            const cursor = document.getElementById('custom-cursor');
+            
+            document.addEventListener('mousemove', (e) => {
+                cursor.style.left = e.clientX + 'px';
+                cursor.style.top = e.clientY + 'px';
+            });
+
+            // Add interaction classes for hover effects
+            const interactiveTargets = document.querySelectorAll('.interactive-target, a, button');
+            const jobButton = document.getElementById('job-button');
+
+            interactiveTargets.forEach(target => {
+                target.addEventListener('mouseenter', () => {
+                    cursor.classList.add('cursor-interact');
+                    if (target.id === 'job-button') {
+                        jobButton.classList.add('button-interact-grow');
+                    }
+                });
+                target.addEventListener('mouseleave', () => {
+                    cursor.classList.remove('cursor-interact');
+                    if (target.id === 'job-button') {
+                        jobButton.classList.remove('button-interact-grow');
+                    }
+                });
+            });
+
+            // --- Modal Logic ---
+            const signInModal = document.getElementById('signInModal');
+            const registerModal = document.getElementById('registerModal');
+            
+            const openSignInBtn = document.getElementById('open-signin');
+            const openRegisterBtn = document.getElementById('open-register');
+            
+            const closeSignInBtn = document.getElementById('close-signin');
+            const closeRegisterBtn = document.getElementById('close-register');
+            
+            const switchToRegisterBtn = document.getElementById('switch-to-register');
+            const switchToSignInBtn = document.getElementById('switch-to-signin');
+
+            const showModal = (modal) => modal.classList.remove('hidden');
+            const hideModal = (modal) => modal.classList.add('hidden');
+
+            openSignInBtn.addEventListener('click', () => showModal(signInModal));
+            openRegisterBtn.addEventListener('click', () => showModal(registerModal));
+
+            closeSignInBtn.addEventListener('click', () => hideModal(signInModal));
+            closeRegisterBtn.addEventListener('click', () => hideModal(registerModal));
+
+            switchToRegisterBtn.addEventListener('click', () => {
+                hideModal(signInModal);
+                showModal(registerModal);
+            });
+            
+            switchToSignInBtn.addEventListener('click', () => {
+                hideModal(registerModal);
+                showModal(signInModal);
+            });
+
+            // Close modal on outside click
+            [signInModal, registerModal].forEach(modal => {
+                modal.addEventListener('click', (e) => {
+                    if (e.target === modal) {
+                        hideModal(modal);
+                    }
+                });
+            });
+
+            // --- Authentication Logic ---
+            const signInForm = signInModal.querySelector('form');
+            const registerForm = registerModal.querySelector('form');
+            
+            // Handle sign in
+            signInForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const email = document.getElementById('signin-email').value;
+                const password = document.getElementById('signin-password').value;
+                
+                try {
+                    const response = await fetch(`${API_BASE_URL}/login`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ email, password })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        // Store token in localStorage
+                        localStorage.setItem('silverstar_token', data.token);
+                        currentUser = data.user;
+                        
+                        // Update UI
+                        updateUIForLoggedInUser();
+                        hideModal(signInModal);
+                        
+                        // Show success message
+                        showNotification('Sign in successful!', 'success');
+                    } else {
+                        showNotification(data.detail || 'Sign in failed', 'error');
+                    }
+                } catch (error) {
+                    console.error('Sign in error:', error);
+                    showNotification('Server error. Please try again.', 'error');
+                }
+            });
+            
+            // Handle registration
+            registerForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const name = document.getElementById('register-name').value;
+                const email = document.getElementById('register-email').value;
+                const password = document.getElementById('register-password').value;
+                
+                // Client-side validation
+                if (password.length < 8) {
+                    showNotification('Password must be at least 8 characters long', 'error');
+                    return;
+                }
+                
+                // Simple email validation
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(email)) {
+                    showNotification('Please enter a valid email address', 'error');
+                    return;
+                }
+                
+                try {
+                    const response = await fetch(`${API_BASE_URL}/register`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ name, email, password })
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        // Registration successful, but no token returned
+                        // Show success message and redirect to login
+                        hideModal(registerModal);
+                        showNotification('Registration successful! Please sign in.', 'success');
+                        
+                        // Show sign in modal
+                        setTimeout(() => {
+                            showModal(signInModal);
+                        }, 1000);
+                    } else {
+                        showNotification(data.detail || 'Registration failed', 'error');
+                    }
+                } catch (error) {
+                    console.error('Registration error:', error);
+                    showNotification('Server error. Please try again.', 'error');
+                }
+            });
+            
+            // Update UI for logged in user
+            function updateUIForLoggedInUser() {
+                if (!currentUser) return;
+                
+                // Update header to show user info and logout button
+                const header = document.querySelector('header');
+                header.innerHTML = `
+                    <div class="flex items-center">
+                        <img src="assets/logo.png" alt="SilverStar Logo" class="h-10 w-auto">
+                    </div>
+                    <div class="flex items-center gap-4">
+                        <span class="text-gray-300">Welcome, ${currentUser.name}</span>
+                        <button id="logout-btn" class="interactive-target text-gray-300 hover:text-white transition-colors duration-200 text-lg">Logout</button>
+                    </div>
+                `;
+                
+                // Add logout functionality
+                document.getElementById('logout-btn').addEventListener('click', () => {
+                    localStorage.removeItem('silverstar_token');
+                    currentUser = null;
+                    location.reload(); // Simple way to reset UI
+                });
+                
+                // Re-attach cursor interactions to new elements
+                const newInteractiveTargets = document.querySelectorAll('.interactive-target, a, button');
+                newInteractiveTargets.forEach(target => {
+                    target.addEventListener('mouseenter', () => {
+                        cursor.classList.add('cursor-interact');
+                    });
+                    target.addEventListener('mouseleave', () => {
+                        cursor.classList.remove('cursor-interact');
+                    });
+                });
+            }
+            
+            // Show notification
+            function showNotification(message, type) {
+                // Create notification element
+                const notification = document.createElement('div');
+                notification.className = `fixed top-20 right-6 p-4 rounded-lg shadow-lg z-50 ${
+                    type === 'success' ? 'bg-green-600' : 'bg-red-600'
+                } text-white`;
+                notification.textContent = message;
+                
+                document.body.appendChild(notification);
+                
+                // Remove after 3 seconds
+                setTimeout(() => {
+                    notification.remove();
+                }, 3000);
+            }
+
+            // --- "Job Now" Flow Logic ---
+            const heroSection = document.getElementById('hero-section');
+            const loadingSection = document.getElementById('loading-section');
+            const resultsSection = document.getElementById('results-section');
+            const searchAgainBtn = document.getElementById('search-again');
+
+            jobButton.addEventListener('click', () => {
+                // Check if user is logged in
+                if (!currentUser) {
+                    showNotification('Please sign in to search for jobs', 'error');
+                    showModal(signInModal);
+                    return;
+                }
+                
+                // Redirect to chatbot page
+                window.location.href = 'chatbot.html';
+            });
+
+            // Search Again button logic
+            searchAgainBtn.addEventListener('click', () => {
+                resultsSection.style.opacity = '0';
+                setTimeout(() => {
+                    resultsSection.classList.add('hidden');
+                    heroSection.classList.remove('hidden');
+                    heroSection.style.opacity = '1';
+                }, 500);
+            });
+
+            // --- Background Stars Generation & Animation ---
+            const starContainer = document.getElementById('star-container');
+            const numStars = 100; // Number of stars
+            
+            let buttonRect;
+            let buttonCenterX;
+            let buttonCenterY;
+
+            function updateButtonPosition() {
+                buttonRect = jobButton.getBoundingClientRect();
+                buttonCenterX = buttonRect.left + buttonRect.width / 2;
+                buttonCenterY = buttonRect.top + buttonRect.height / 2;
+            }
+
+            // Initial position update
+            updateButtonPosition();
+            window.addEventListener('resize', updateButtonPosition);
+
+            function createStar() {
+                const star = document.createElement('div');
+                star.classList.add('bg-star');
+
+                const spawnEdge = Math.floor(Math.random() * 4); // 0: top, 1: right, 2: bottom, 3: left
+                let startX, startY;
+
+                // Use viewport-relative units for positioning
+                const vw = window.innerWidth / 100; // 1% of viewport width
+                const vh = window.innerHeight / 100; // 1% of viewport height
+
+                switch (spawnEdge) {
+                    case 0: // Top
+                        startX = Math.random() * 100; // Random percentage of viewport width
+                        startY = -1; // Slightly off-screen
+                        break;
+                    case 1: // Right
+                        startX = 101; // Slightly off-screen
+                        startY = Math.random() * 100; // Random percentage of viewport height
+                        break;
+                    case 2: // Bottom
+                        startX = Math.random() * 100; // Random percentage of viewport width
+                        startY = 101; // Slightly off-screen
+                        break;
+                    case 3: // Left
+                        startX = -1; // Slightly off-screen
+                        startY = Math.random() * 100; // Random percentage of viewport height
+                        break;
+                }
+                
+                star.style.left = `${startX}vw`;
+                star.style.top = `${startY}vh`;
+
+                // Calculate final position (translation) for star to reach button center
+                // Convert button position to viewport-relative units
+                const buttonXPercent = (buttonCenterX / window.innerWidth) * 100;
+                const buttonYPercent = (buttonCenterY / window.innerHeight) * 100;
+                
+                const dx = buttonXPercent - startX;
+                const dy = buttonYPercent - startY;
+
+                star.style.setProperty('--dx', `${dx}vw`);
+                star.style.setProperty('--dy', `${dy}vh`);
+                star.style.setProperty('--duration', `${2 + Math.random() * 3}s`); // Random duration between 2 and 5 seconds
+
+                starContainer.appendChild(star);
+
+                // Start animation after a small delay to ensure CSS properties are applied
+                setTimeout(() => {
+                    star.classList.add('star-animation');
+                }, 50);
+
+                // Remove star after animation and create a new one
+                star.addEventListener('animationend', () => {
+                    star.remove();
+                    createStar(); // Regenerate a new star
+                });
+            }
+
+            // Create initial set of stars
+            for (let i = 0; i < numStars; i++) {
+                // Delay initial creation to spread them out
+                setTimeout(createStar, i * (5000 / numStars)); 
+            }
+
+            // --- Floating Particles Generation & Animation ---
+            const particleContainer = document.getElementById('particle-container');
+            const numParticles = 50; // Number of particles
+            
+            function createParticle() {
+                const particle = document.createElement('div');
+                particle.classList.add('particle', 'particle-animation');
+
+                const spawnEdge = Math.floor(Math.random() * 4); // 0: top, 1: right, 2: bottom, 3: left
+                let startX, startY;
+
+                // Use viewport-relative units for positioning
+                switch (spawnEdge) {
+                    case 0: // Top
+                        startX = Math.random() * 100; // Random percentage of viewport width
+                        startY = -1; // Slightly off-screen
+                        break;
+                    case 1: // Right
+                        startX = 101; // Slightly off-screen
+                        startY = Math.random() * 100; // Random percentage of viewport height
+                        break;
+                    case 2: // Bottom
+                        startX = Math.random() * 100; // Random percentage of viewport width
+                        startY = 101; // Slightly off-screen
+                        break;
+                    case 3: // Left
+                        startX = -1; // Slightly off-screen
+                        startY = Math.random() * 100; // Random percentage of viewport height
+                        break;
+                }
+                
+                particle.style.left = `${startX}vw`;
+                particle.style.top = `${startY}vh`;
+
+                // Calculate final position (translation) for particle to reach button center
+                // Convert button position to viewport-relative units
+                const buttonXPercent = (buttonCenterX / window.innerWidth) * 100;
+                const buttonYPercent = (buttonCenterY / window.innerHeight) * 100;
+                
+                const dx = buttonXPercent - startX;
+                const dy = buttonYPercent - startY;
+
+                particle.style.setProperty('--dx', `${dx}vw`);
+                particle.style.setProperty('--dy', `${dy}vh`);
+                particle.style.setProperty('--duration', `${2 + Math.random() * 3}s`); // Random duration between 2 and 5 seconds
+
+                particleContainer.appendChild(particle);
+
+                // Start animation after a small delay to ensure CSS properties are applied
+                setTimeout(() => {
+                    particle.classList.add('particle-animation');
+                }, 50);
+
+                // Remove particle after animation and create a new one
+                particle.addEventListener('animationend', () => {
+                    particle.remove();
+                    createParticle(); // Regenerate a new particle
+                });
+            }
+
+            // Create initial set of particles
+            for (let i = 0; i < numParticles; i++) {
+                // Delay initial creation to spread them out
+                setTimeout(createParticle, i * (1000 / numParticles)); 
+            }
+        });
+    </script>
+
+</body>
+</html>
+
+
