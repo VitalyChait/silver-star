@@ -56,6 +56,7 @@ class AnswerValidator:
         - If the user says they don't know or can't answer, it's NOT a valid answer
         - For name questions: Look for patterns like "My name is X", "I'm X", "I am X", or just the name itself
         - For location questions: Look for city, state, country names or phrases like "I live in X", "I'm located in X"
+        - Answers that describe the assistant (e.g., "As an AI I don't have..."), refuse to provide info, or discuss unrelated topics are NOT valid.
         - Be lenient - if the user provides any information that could be the answer, consider it valid
         
         Respond with valid JSON only:

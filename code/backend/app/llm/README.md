@@ -9,8 +9,6 @@ llm/
 ├── __init__.py              # Main module exports
 ├── README.md                # This file
 ├── README_AUDIO.md          # Audio functionality documentation
-├── .llm_config              # Configuration file (create from llm_config_example)
-├── llm_config_example       # Example configuration file
 ├── core/                    # Core functionality
 │   ├── __init__.py
 │   ├── config.py            # Configuration management
@@ -36,7 +34,7 @@ llm/
 ## Components
 
 ### 1. Core (`core/`)
-- **Configuration (`config.py`)**: Handles configuration for LLM services, reads from `.llm_config` file
+- **Configuration (`config.py`)**: Handles configuration for LLM services, reads from environment variables (see `code/.env`)
 - **LLM Service (`service.py`)**: Provides a wrapper around Google's Gemini API
 
 ### 2. Chatbot (`chatbot/`)
@@ -78,7 +76,7 @@ POST /api/chatbot/reset
 
 ## Configuration
 
-Create a `.llm_config` file in the `backend/app/llm/` directory with the following format:
+Copy `code/env_example` to `code/.env` and populate the environment variables before running the backend. The relevant section is:
 
 ```
 # Required: Gemini API Configuration
@@ -111,7 +109,7 @@ Use `uv sync` to install and `uv run` to execute commands within the project env
    uv sync
    ```
 
-2. Configure your API keys in the `.llm_config` file
+2. Configure your API keys in `../.env`
 
 3. Start the backend server:
    ```bash

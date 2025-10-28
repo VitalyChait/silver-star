@@ -6,6 +6,7 @@ import re
 from ..core.service import llm_service
 from .recommendations import job_recommendation_service
 from .validation import answer_validator
+from .profile_validator import profile_validation_service
 from ..audio.audio_player import audio_player
 
 logger = logging.getLogger(__name__)
@@ -13,6 +14,42 @@ logger = logging.getLogger(__name__)
 
 class CandidateChatbot:
     """Chatbot for gathering candidate information and recommending jobs."""
+    
+    FIELD_KEYS = (
+        "full_name",
+        "location",
+        "age",
+        "physical_condition",
+        "interests",
+        "limitations",
+    )
+
+    FIELD_STATE_MAP = {
+        "full_name": "collecting_full_name",
+        "location": "collecting_location",
+        "age": "collecting_age",
+        "physical_condition": "collecting_physical_condition",
+        "interests": "collecting_interests",
+        "limitations": "collecting_limitations",
+    }
+
+    FIELD_TYPE_MAP = {
+        "full_name": "full_name",
+        "location": "location",
+        "age": "age",
+        "physical_condition": "physical_condition",
+        "interests": "interests",
+        "limitations": "limitations",
+    }
+
+    FIELD_LABEL_MAP = {
+        "full_name": "full name",
+        "location": "location",
+        "age": "age",
+        "physical_condition": "physical condition",
+        "interests": "areas of interest",
+        "limitations": "limitations",
+    }
     
     def __init__(self, enable_audio: bool = False):
         """
@@ -23,18 +60,31 @@ class CandidateChatbot:
         """
         self.conversation_state = "greeting"
         self.candidate_info = {
-            "name": None,
+            "full_name": None,
             "location": None,
-            "looking_for": None,
-            "skills": None,
-            "availability": None
+            "age": None,
+            "physical_condition": None,
+            "interests": None,
+            "limitations": None,
+            "validation": None,
+            "executive_summary": None,
+            "job_suggestions": None,
         }
         self.conversation_history = []
         self.db_session = None  # Will be set when processing messages
         self.last_question = None  # Track the last question asked
         self.last_question_type = None  # Track the type of the last question
         self.enable_audio = enable_audio  # Whether to play audio responses
-    
+
+    def _preferred_name(self) -> Optional[str]:
+        """Return a friendly form of the candidate's name for responses."""
+        full_name = self.candidate_info.get("full_name")
+        if full_name:
+            parts = full_name.split()
+            if parts:
+                return parts[0]
+        return None
+
     async def process_message(
         self, 
         message: str, 
@@ -98,16 +148,22 @@ class CandidateChatbot:
         # Process based on current conversation state
         if self.conversation_state == "greeting":
             response = await self._handle_greeting()
-        elif self.conversation_state == "collecting_name":
-            response = await self._extract_name(message, validated_value)
+        elif self.conversation_state == "collecting_full_name":
+            response = await self._extract_full_name(message, validated_value)
         elif self.conversation_state == "collecting_location":
             response = await self._extract_location(message, validated_value)
-        elif self.conversation_state == "collecting_looking_for":
-            response = await self._extract_looking_for(message, validated_value)
-        elif self.conversation_state == "collecting_skills":
-            response = await self._extract_skills(message, validated_value)
-        elif self.conversation_state == "collecting_availability":
-            response = await self._extract_availability(message, validated_value)
+        elif self.conversation_state == "collecting_age":
+            response = await self._extract_age(message, validated_value)
+        elif self.conversation_state == "collecting_physical_condition":
+            response = await self._extract_physical_condition(message, validated_value)
+        elif self.conversation_state == "collecting_interests":
+            response = await self._extract_interests(message, validated_value)
+        elif self.conversation_state == "collecting_limitations":
+            response = await self._extract_limitations(message, validated_value)
+        elif self.conversation_state == "profile_complete":
+            response = await self._handle_general_query(message)
+        elif self.conversation_state == "validating_profile":
+            response = await self._validate_profile()
         elif self.conversation_state == "recommending_jobs":
             response = await self._recommend_jobs()
         else:
@@ -136,116 +192,78 @@ class CandidateChatbot:
     
     async def _handle_greeting(self) -> str:
         """Handle the initial greeting."""
-        self.conversation_state = "collecting_name"
+        self.conversation_state = "collecting_full_name"
         
-        prompt = """
-        You are a job recruitment assistant for Silver Star. 
-        Greet the candidate and ask for their name to get started.
-        Keep it brief and professional. Do not mention being an AI or assistant.
-        """
-        
-        response = await llm_service.generate_response(prompt)
+        response = "Hello! I'm your Silver Star assistant. Could you please share your full name so we can get started?"
         self.last_question = response
-        self.last_question_type = "name"
+        self.last_question_type = "full_name"
         return response
     
-    async def _extract_name(self, message: str, validated_value: Optional[str] = None) -> str:
-        """Extract the candidate's name from their message."""
-        # First, try a simple pattern match for common name introductions
-        
+    async def _extract_full_name(self, message: str, validated_value: Optional[str] = None) -> str:
+        """Extract the candidate's full name from their message."""
+
         extracted_name = None
         if validated_value:
             extracted_name = re.sub(r"[^A-Za-z\s'-]", "", validated_value).strip()
             extracted_name = re.sub(r"\s+", " ", extracted_name)
             if extracted_name:
                 extracted_name = extracted_name.title()
-        
-        # Check for patterns like "My name is X", "I'm X", "I am X", "Call me X"
-        # Also handle just the name by itself
+
         if not extracted_name:
             patterns = [
                 r"(?:my name is|i'm|i am|call me)\s+([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)",
                 r"^(?:hi|hello|hey)[,\s]*(?:i'm|i am)?\s*([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)",
-                r"^([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)$",  # Just a name by itself
+                r"^([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)$",
             ]
-            
+
             for pattern in patterns:
                 match = re.search(pattern, message, re.IGNORECASE)
                 if match:
                     candidate_name = match.group(1).strip(" ,.!?")
-                    # Basic validation - should be 2-60 characters
-                    if 2 <= len(candidate_name) <= 60:
+                    if 2 <= len(candidate_name) <= 80:
                         extracted_name = re.sub(r"\s+", " ", candidate_name).title()
                         break
-        
+
         if extracted_name:
-            self.candidate_info["name"] = extracted_name
+            self.candidate_info["full_name"] = extracted_name
             self.conversation_state = "collecting_location"
-            
-            prompt = f"""
-            You are a job recruitment assistant for Silver Star. A candidate named {extracted_name} has just introduced themselves.
-            Respond in a friendly, professional manner and ask for their location.
-            Do not mention being an AI or assistant. Just be a helpful recruiter.
-            """
-            
-            response = await llm_service.generate_response(prompt)
+            response = f"Nice to meet you, {extracted_name}! Where are you currently located?"
             self.last_question = response
             self.last_question_type = "location"
             return response
-        
-        # If pattern matching fails, try LLM extraction with clearer instructions
-        schema = {"name": "string"}
-        
+
+        schema = {"full_name": "string"}
+
         try:
-            # Create a more specific extraction prompt
             extraction_prompt = f"""
-            Extract the person's name from this message: "{message}"
+            Extract the person's full name from this message: "{message}"
             The person is introducing themselves to a job recruiter.
             Only extract their name, nothing else.
             If there's no clear name, respond with null.
             """
-            
+
             extracted = await llm_service.extract_structured_data(
                 extraction_prompt, schema, self.conversation_history
             )
-            
-            if extracted.get("name"):
-                self.candidate_info["name"] = extracted["name"]
+
+            candidate_name = extracted.get("full_name") if extracted else None
+            if candidate_name:
+                candidate_name = re.sub(r"\s+", " ", candidate_name).strip()
+                self.candidate_info["full_name"] = candidate_name
                 self.conversation_state = "collecting_location"
-                
-                prompt = f"""
-                You are a job recruitment assistant for Silver Star. A candidate named {extracted['name']} has just introduced themselves.
-                Respond in a friendly, professional manner and ask for their location.
-                Do not mention being an AI or assistant. Just be a helpful recruiter.
-                """
-                
-                response = await llm_service.generate_response(prompt)
+                response = f"Nice to meet you, {candidate_name}! Where are you currently located?"
                 self.last_question = response
                 self.last_question_type = "location"
                 return response
-            else:
-                prompt = """
-                You are a job recruitment assistant for Silver Star.
-                I didn't catch the person's name. Ask them to tell you their name in a friendly way.
-                Do not mention being an AI or assistant.
-                """
-                
-                response = await llm_service.generate_response(prompt)
-                self.last_question = response
-                self.last_question_type = "name"
-                return response
-        except Exception as e:
-            logger.error(f"Error extracting name: {str(e)}")
-            
-            prompt = """
-            You are a job recruitment assistant for Silver Star.
-            I'm having trouble understanding. Could you please tell me your name?
-            Do not mention being an AI or assistant.
-            """
-            
-            response = await llm_service.generate_response(prompt)
+            response = "I didn't catch your name yet. Could you please share your full name?"
             self.last_question = response
-            self.last_question_type = "name"
+            self.last_question_type = "full_name"
+            return response
+        except Exception as e:
+            logger.error(f"Error extracting full name: {str(e)}")
+            response = "I'm having trouble understanding. Could you please tell me your full name?"
+            self.last_question = response
+            self.last_question_type = "full_name"
             return response
     
     async def _extract_location(self, message: str, validated_value: Optional[str] = None) -> str:
@@ -292,168 +310,327 @@ class CandidateChatbot:
             
             if location:
                 self.candidate_info["location"] = location
-                self.conversation_state = "collecting_looking_for"
-                
-                prompt = f"""
-                Great! Now, what kind of job are you looking for? 
-                Please describe the type of position, industry, or role you're interested in.
-                """
-                
-                response = await llm_service.generate_response(prompt)
+                self.conversation_state = "collecting_age"
+
+                preferred_name = self._preferred_name()
+                name_fragment = f", {preferred_name}" if preferred_name else ""
+                response = f"Thanks{name_fragment}! To make sure opportunities are appropriate, could you share your age?"
                 self.last_question = response
-                self.last_question_type = "looking_for"
+                self.last_question_type = "age"
                 return response
             else:
-                prompt = """
-                I didn't catch your location. Could you please tell me where you're located?
-                """
-                
-                response = await llm_service.generate_response(prompt)
+                response = "I didn't catch your location. Could you please tell me where you're located?"
                 self.last_question = response
                 self.last_question_type = "location"
                 return response
         except Exception as e:
             logger.error(f"Error extracting location: {str(e)}")
             
-            prompt = """
-            I'm having trouble understanding. Could you please tell me your location?
-            """
-            
-            response = await llm_service.generate_response(prompt)
+            response = "I'm having trouble understanding. Could you please tell me your location?"
             self.last_question = response
             self.last_question_type = "location"
             return response
     
-    async def _extract_looking_for(self, message: str, validated_value: Optional[str] = None) -> str:
-        """Extract what the candidate is looking for from their message."""
-        schema = {"looking_for": "string"}
-        looking_for = validated_value.strip() if isinstance(validated_value, str) and validated_value.strip() else None
-        
-        try:
-            if not looking_for:
+    async def _extract_age(self, message: str, validated_value: Optional[str] = None) -> str:
+        """Extract the candidate's age."""
+
+        def normalize_age(value: str) -> Optional[str]:
+            if not value:
+                return None
+            digits = re.findall(r"\d{1,3}", value)
+            if digits:
+                try:
+                    age_int = int(digits[0])
+                    if 10 <= age_int <= 120:
+                        return str(age_int)
+                except ValueError:
+                    return None
+            return None
+
+        age_value = normalize_age(validated_value) if validated_value else None
+
+        if not age_value:
+            age_value = normalize_age(message)
+
+        if not age_value:
+            schema = {"age": "string"}
+            try:
+                extraction_prompt = f"""
+                Extract the person's age from the following message. Return numbers only.
+                If age is not provided, respond with null.
+                Message: "{message}"
+                Respond with JSON like {{"age": "35"}} or {{"age": null}}.
+                """
+
                 extracted = await llm_service.extract_structured_data(
-                    message, schema, self.conversation_history
+                    extraction_prompt, schema, self.conversation_history
                 )
-                looking_for = extracted.get("looking_for") if extracted else None
-            
-            if looking_for:
-                self.candidate_info["looking_for"] = looking_for
-                self.conversation_state = "collecting_skills"
-                
-                prompt = f"""
-                Thanks for sharing! Now, could you tell me about your skills and experience?
-                What can you do well? Please include any relevant skills, certifications, or experience.
-                """
-                
-                response = await llm_service.generate_response(prompt)
-                self.last_question = response
-                self.last_question_type = "skills"
-                return response
-            else:
-                prompt = """
-                I didn't quite understand what you're looking for. Could you please describe the type of job or position you're interested in?
-                """
-                
-                response = await llm_service.generate_response(prompt)
-                self.last_question = response
-                self.last_question_type = "looking_for"
-                return response
-        except Exception as e:
-            logger.error(f"Error extracting what they're looking for: {str(e)}")
-            
-            prompt = """
-            I'm having trouble understanding. Could you please describe what type of job you're looking for?
-            """
-            
-            response = await llm_service.generate_response(prompt)
+
+                age_value = normalize_age(extracted.get("age") if extracted else None)
+            except Exception as e:
+                logger.error(f"Error extracting age: {str(e)}")
+
+        if age_value:
+            self.candidate_info["age"] = age_value
+            self.conversation_state = "collecting_physical_condition"
+
+            response = "Thank you. Could you describe your current physical condition or anything I should keep in mind?"
             self.last_question = response
-            self.last_question_type = "looking_for"
+            self.last_question_type = "physical_condition"
             return response
+
+        response = "I didn't catch your age. Could you please share how old you are?"
+        self.last_question = response
+        self.last_question_type = "age"
+        return response
     
-    async def _extract_skills(self, message: str, validated_value: Optional[str] = None) -> str:
-        """Extract the candidate's skills from their message."""
-        schema = {"skills": "string"}
-        skills = validated_value.strip() if isinstance(validated_value, str) and validated_value.strip() else None
-        
+    async def _extract_physical_condition(self, message: str, validated_value: Optional[str] = None) -> str:
+        """Capture the candidate's physical condition description."""
+        schema = {"physical_condition": "string"}
+        condition = validated_value.strip() if isinstance(validated_value, str) and validated_value.strip() else None
+
         try:
-            if not skills:
+            if not condition:
+                extraction_prompt = f"""
+                Summarize any description of the person's physical condition from this message.
+                If nothing is mentioned, respond with null.
+                Message: "{message}"
+                Respond with JSON like {{"physical_condition": "Active and able to lift 30 lbs"}} or {{"physical_condition": null}}.
+                """
+
                 extracted = await llm_service.extract_structured_data(
-                    message, schema, self.conversation_history
+                    extraction_prompt, schema, self.conversation_history
                 )
-                skills = extracted.get("skills") if extracted else None
-            
-            if skills:
-                self.candidate_info["skills"] = skills
-                self.conversation_state = "collecting_availability"
-                
-                prompt = f"""
-                Great! Finally, when are you available to start work?
-                Please let me know your availability (immediately, specific date, etc.).
-                """
-                
-                response = await llm_service.generate_response(prompt)
+                condition = extracted.get("physical_condition") if extracted else None
+
+            if condition:
+                self.candidate_info["physical_condition"] = condition.strip()
+                self.conversation_state = "collecting_interests"
+
+                response = "Thanks for sharing. What kinds of activities or roles are you most interested in doing?"
                 self.last_question = response
-                self.last_question_type = "availability"
+                self.last_question_type = "interests"
                 return response
-            else:
-                prompt = """
-                I didn't catch your skills. Could you please tell me about your skills and experience?
-                """
-                
-                response = await llm_service.generate_response(prompt)
-                self.last_question = response
-                self.last_question_type = "skills"
-                return response
-        except Exception as e:
-            logger.error(f"Error extracting skills: {str(e)}")
-            
-            prompt = """
-            I'm having trouble understanding. Could you please tell me about your skills and experience?
-            """
-            
-            response = await llm_service.generate_response(prompt)
+
+            response = "I didn't catch any details about your physical condition. Could you describe it briefly?"
             self.last_question = response
-            self.last_question_type = "skills"
+            self.last_question_type = "physical_condition"
             return response
-    
-    async def _extract_availability(self, message: str, validated_value: Optional[str] = None) -> str:
-        """Extract the candidate's availability from their message."""
-        schema = {"availability": "string"}
-        availability = validated_value.strip() if isinstance(validated_value, str) and validated_value.strip() else None
-        
+        except Exception as e:
+            logger.error(f"Error extracting physical condition: {str(e)}")
+
+            response = "I'm having trouble understanding. Could you tell me a bit about your physical condition?"
+            self.last_question = response
+            self.last_question_type = "physical_condition"
+            return response
+
+    async def _extract_interests(self, message: str, validated_value: Optional[str] = None) -> str:
+        """Capture the candidate's interests or preferred activities."""
+        schema = {"interests": "string"}
+        interests = validated_value.strip() if isinstance(validated_value, str) and validated_value.strip() else None
+
         try:
-            if not availability:
-                extracted = await llm_service.extract_structured_data(
-                    message, schema, self.conversation_history
-                )
-                availability = extracted.get("availability") if extracted else None
-            
-            if availability:
-                self.candidate_info["availability"] = availability
-                self.conversation_state = "recommending_jobs"
-                
-                # Move to job recommendations
-                return await self._recommend_jobs()
-            else:
-                prompt = """
-                I didn't catch your availability. Could you please tell me when you're available to start work?
+            if not interests:
+                extraction_prompt = f"""
+                Extract the areas of interest or preferred activities the person mentions in this message.
+                Provide a concise summary. If none are mentioned, respond with null.
+                Message: "{message}"
+                Respond with JSON like {{"interests": "Gardening, organizing community events"}} or {{"interests": null}}.
                 """
-                
-                response = await llm_service.generate_response(prompt)
+
+                extracted = await llm_service.extract_structured_data(
+                    extraction_prompt, schema, self.conversation_history
+                )
+                interests = extracted.get("interests") if extracted else None
+
+            if interests:
+                self.candidate_info["interests"] = interests.strip()
+                self.conversation_state = "collecting_limitations"
+
+                response = "That's helpful. Are there any limitations or things you prefer to avoid so we can plan around them?"
                 self.last_question = response
-                self.last_question_type = "availability"
+                self.last_question_type = "limitations"
                 return response
-        except Exception as e:
-            logger.error(f"Error extracting availability: {str(e)}")
-            
-            prompt = """
-            I'm having trouble understanding. Could you please tell me when you're available to start work?
-            """
-            
-            response = await llm_service.generate_response(prompt)
+
+            response = "I didn't quite catch your areas of interest. Could you tell me what types of activities you enjoy or are open to?"
             self.last_question = response
-            self.last_question_type = "availability"
+            self.last_question_type = "interests"
             return response
+        except Exception as e:
+            logger.error(f"Error extracting interests: {str(e)}")
+
+            response = "I'm having trouble understanding. Could you share the kinds of things you would like to do?"
+            self.last_question = response
+            self.last_question_type = "interests"
+            return response
+
+    async def _extract_limitations(self, message: str, validated_value: Optional[str] = None) -> str:
+        """Capture any limitations the candidate mentions."""
+        schema = {"limitations": "string"}
+        limitations = validated_value.strip() if isinstance(validated_value, str) and validated_value.strip() else None
+
+        try:
+            if not limitations:
+                extraction_prompt = f"""
+                Extract any limitations, restrictions, or constraints the person mentions in this message.
+                If none are mentioned, respond with null.
+                Message: "{message}"
+                Respond with JSON like {{"limitations": "Needs seated work, limited lifting"}} or {{"limitations": null}}.
+                """
+
+                extracted = await llm_service.extract_structured_data(
+                    extraction_prompt, schema, self.conversation_history
+                )
+                limitations = extracted.get("limitations") if extracted else None
+
+            if limitations:
+                self.candidate_info["limitations"] = limitations.strip()
+            else:
+                self.candidate_info["limitations"] = None
+
+            self.conversation_state = "validating_profile"
+            return await self._validate_profile()
+        except Exception as e:
+            logger.error(f"Error extracting limitations: {str(e)}")
+
+            response = "I'm having trouble understanding. Could you share any limitations we should be aware of? If there are none, feel free to say so."
+            self.last_question = response
+            self.last_question_type = "limitations"
+            return response
+
+    async def _validate_profile(self) -> str:
+        """Validate the collected profile information using the validation service."""
+
+        validation = await profile_validation_service.validate_profile(self.candidate_info)
+        self.candidate_info["validation"] = validation
+
+        if not validation.get("is_complete", False):
+            missing_fields = validation.get("missing_fields") or []
+            if missing_fields:
+                next_field = missing_fields[0]
+                field_label = self.FIELD_LABEL_MAP.get(next_field, next_field.replace("_", " "))
+                self.conversation_state = self.FIELD_STATE_MAP.get(next_field, "collecting_full_name")
+
+                follow_up_prompt = f"""
+                You are a job recruitment assistant for Silver Star.
+                Let the candidate know we still need their {field_label}.
+                Ask politely for that information in a single short message.
+                Do not mention being an AI or assistant.
+                """
+
+                response = await llm_service.generate_response(follow_up_prompt)
+                self.last_question = response
+                self.last_question_type = self.FIELD_TYPE_MAP.get(next_field, next_field)
+                return response
+
+        summary = validation.get("summary")
+        issues = validation.get("issues") or []
+        notes = validation.get("notes")
+
+        if not summary:
+            profile_snapshot = json.dumps({k: self.candidate_info.get(k) for k in self.FIELD_KEYS}, indent=2)
+            summary_prompt = f"""
+            Craft a concise, friendly summary of this candidate profile for Silver Star:
+            {profile_snapshot}
+            """
+            summary = await llm_service.generate_response(summary_prompt)
+
+        message_parts = [summary.strip()]
+        if issues:
+            issues_text = "Here are a few notes I noticed:\n" + "\n".join(f"- {issue}" for issue in issues)
+            message_parts.append(issues_text)
+        if notes:
+            message_parts.append(notes.strip())
+
+        executive_summary = await self._generate_executive_summary()
+        if executive_summary:
+            formatted_summary = json.dumps(executive_summary, indent=2)
+            message_parts.append("Executive Summary:\n```json\n" + formatted_summary + "\n```")
+            self.candidate_info["executive_summary"] = executive_summary
+            self.candidate_info["job_suggestions"] = executive_summary.get("suggested_roles")
+        else:
+            self.candidate_info["executive_summary"] = None
+            self.candidate_info["job_suggestions"] = None
+
+        recommendations = await self._recommend_jobs()
+        if recommendations:
+            message_parts.append(recommendations)
+        message_parts.append(
+            "I've saved these details. If anything looks off, please edit it directly in the profile panel or let me know."
+        )
+
+        self.conversation_state = "profile_complete"
+        self.last_question = None
+        self.last_question_type = None
+
+        return "\n\n".join(part for part in message_parts if part)
+
+    async def _generate_executive_summary(self) -> Optional[Dict[str, Any]]:
+        """Produce a structured executive summary and role suggestions."""
+        profile_snapshot = {
+            "full_name": self.candidate_info.get("full_name"),
+            "location": self.candidate_info.get("location"),
+            "age": self.candidate_info.get("age"),
+            "physical_condition": self.candidate_info.get("physical_condition"),
+            "interests": self.candidate_info.get("interests"),
+            "limitations": self.candidate_info.get("limitations"),
+        }
+
+        prompt = f"""
+        You are preparing an executive summary for a job placement team.
+
+        Candidate profile:
+        {json.dumps(profile_snapshot, indent=2)}
+
+        Produce a JSON document with this schema:
+        {{
+            "summary": "2-3 sentence professional overview of the candidate",
+            "suggested_roles": [
+                {{
+                    "role": "Concise role name",
+                    "reason": "Why this fits the candidate",
+                    "notes": "Optional additional note or null"
+                }}
+            ],
+            "next_steps": [
+                "Concise suggestion for what to do next"
+            ]
+        }}
+
+        Requirements:
+        - If data is missing for any field, note that succinctly in the summary.
+        - suggested_roles should contain between 2 and 4 entries tailored to the profile.
+        - next_steps must contain at least one actionable suggestion.
+        - Keep language plain and free from markdown.
+        """
+
+        try:
+            response = await llm_service.generate_response(
+                prompt,
+                temperature=0.2,
+                max_output_tokens=600,
+            )
+
+            if response.startswith("```json"):
+                response = response[7:]
+            if response.startswith("```"):
+                response = response[3:]
+            if response.endswith("```"):
+                response = response[:-3]
+
+            parsed = json.loads(response.strip())
+
+            if not isinstance(parsed, dict):
+                raise ValueError("Executive summary response is not a JSON object")
+
+            parsed.setdefault("summary", "")
+            parsed.setdefault("suggested_roles", [])
+            parsed.setdefault("next_steps", [])
+
+            return parsed
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error("Error generating executive summary: %s", exc)
+            return None
     
     async def _recommend_jobs(self) -> str:
         """Generate job recommendations based on candidate information."""
@@ -525,16 +702,30 @@ class CandidateChatbot:
         """
         
         return await llm_service.generate_response(prompt)
+
+    async def apply_manual_update(self, updates: Dict[str, Any]) -> str:
+        """Apply manual profile adjustments and re-validate."""
+        for field in self.FIELD_KEYS:
+            if field in updates:
+                value = updates[field]
+                self.candidate_info[field] = value.strip() if isinstance(value, str) and value.strip() else None
+
+        self.conversation_state = "validating_profile"
+        return await self._validate_profile()
     
     def reset_conversation(self):
         """Reset the conversation state and candidate information."""
         self.conversation_state = "greeting"
         self.candidate_info = {
-            "name": None,
+            "full_name": None,
             "location": None,
-            "looking_for": None,
-            "skills": None,
-            "availability": None
+            "age": None,
+            "physical_condition": None,
+            "interests": None,
+            "limitations": None,
+            "validation": None,
+            "executive_summary": None,
+            "job_suggestions": None,
         }
         self.conversation_history = []
         self.db_session = None

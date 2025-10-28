@@ -75,6 +75,26 @@ class VoiceResponse(BaseModel):
     conversation_id: str
 
 
+class ProfileData(BaseModel):
+    full_name: Optional[str] = None
+    location: Optional[str] = None
+    age: Optional[str] = None
+    physical_condition: Optional[str] = None
+    interests: Optional[str] = None
+    limitations: Optional[str] = None
+
+
+class ProfileUpdateRequest(BaseModel):
+    conversation_id: str
+    updates: ProfileData
+
+
+class ProfileUpdateResponse(BaseModel):
+    message: str
+    candidate_info: Dict[str, Any]
+    conversation_id: str
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_bot(
     message: ChatMessage,
@@ -155,6 +175,39 @@ async def voice_chat_with_bot(
     except Exception as e:
         logger.error(f"Error in voice chat endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to process voice message")
+
+
+@router.post("/profile/update", response_model=ProfileUpdateResponse)
+async def update_profile_details(
+    request: ProfileUpdateRequest
+):
+    """Manually update the candidate profile and revalidate it."""
+    if not chatbot_available:
+        raise HTTPException(status_code=503, detail="Chatbot functionality is not available")
+
+    try:
+        conversation_id = request.conversation_id
+        if not conversation_id:
+            raise HTTPException(status_code=400, detail="conversation_id is required")
+
+        if conversation_id not in chatbot_sessions:
+            chatbot_sessions[conversation_id] = CandidateChatbot()
+
+        chatbot = chatbot_sessions[conversation_id]
+
+        updates = request.updates.model_dump(exclude_unset=True)
+        message = await chatbot.apply_manual_update(updates)
+
+        return ProfileUpdateResponse(
+            message=message,
+            candidate_info=chatbot.candidate_info,
+            conversation_id=conversation_id
+        )
+    except HTTPException:
+        raise
+    except Exception as e:  # pylint: disable=broad-except
+        logger.error(f"Error updating profile: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update profile information")
 
 
 @router.post("/reset")

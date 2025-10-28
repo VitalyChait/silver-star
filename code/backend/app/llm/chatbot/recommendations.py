@@ -89,7 +89,15 @@ class JobRecommendationService:
             List of job recommendations with match scores
         """
         # Create a prompt for the LLM
-        candidate_summary = json.dumps(candidate_info, indent=2)
+        relevant_profile = {
+            "full_name": candidate_info.get("full_name"),
+            "location": candidate_info.get("location"),
+            "age": candidate_info.get("age"),
+            "physical_condition": candidate_info.get("physical_condition"),
+            "interests": candidate_info.get("interests"),
+            "limitations": candidate_info.get("limitations"),
+        }
+        candidate_summary = json.dumps(relevant_profile, indent=2)
         jobs_summary = json.dumps(jobs, indent=2)
         
         prompt = f"""
@@ -102,7 +110,7 @@ class JobRecommendationService:
         Available Jobs:
         {jobs_summary}
         
-        Please analyze the candidate's skills, location, what they're looking for, and availability
+        Please analyze the candidate's location, interests, physical considerations, and limitations
         to determine which jobs would be the best match.
         
         Return your response as a JSON array of job recommendations. Each recommendation should include:

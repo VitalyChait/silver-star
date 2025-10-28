@@ -25,10 +25,10 @@ uv sync --extra craigslist
 uv sync --extra usajobs
 ```
 
-2. Configure LLM API keys:
+2. Configure environment variables:
 ```bash
-cp app/llm/llm_config_example app/llm/.llm_config
-# Edit app/llm/.llm_config with your API keys
+cp ../env_example ../.env
+# Edit ../.env with your API keys and provider settings
 ```
 
 3. Initialize the database with sample jobs:

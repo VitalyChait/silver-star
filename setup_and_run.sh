@@ -30,20 +30,23 @@ mkdir -p "$LOG_DIR"
 BACKEND_LOG_FILE="$LOG_DIR/backend.log"
 FRONTEND_LOG_FILE="$LOG_DIR/frontend.log"
 
+# Always start with fresh logs for this run
+rm -f "$BACKEND_LOG_FILE" "$FRONTEND_LOG_FILE"
+
 sanitize_string() {
     local value="$1"
     value="$(echo "$value" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
     echo "$value"
 }
 
-sanity_check_llm_keys() {
-    local config_file="$1"
-    if [ ! -f "$config_file" ]; then
-        print_error "LLM configuration file not found at $config_file"
+sanity_check_env_keys() {
+    local env_file="$1"
+    if [ ! -f "$env_file" ]; then
+        print_error "Environment file not found at $env_file"
         exit 1
     fi
 
-    print_status "Performing LLM API key sanity check..."
+    print_status "Performing environment sanity check..."
 
     local -a missing_keys
     local -a placeholder_keys
@@ -70,7 +73,7 @@ sanity_check_llm_keys() {
         if [[ "$value" == *"YOUR_"* || "$value" == *"REPLACE"* || "$value" == *"INSERT"* || "$value" == *"CHANGE_ME"* || "$value" == *"PUT_YOUR"* || "$value" == *"ADD_YOUR"* ]]; then
             placeholder_keys+=("$key")
         fi
-    done < "$config_file"
+    done < "$env_file"
 
     if [ "${#missing_keys[@]}" -gt 0 ]; then
         print_error "Missing values detected for: ${missing_keys[*]}"
@@ -82,7 +85,7 @@ sanity_check_llm_keys() {
         exit 1
     fi
 
-    print_success "LLM API keys sanity check passed"
+    print_success "Environment sanity check passed"
 }
 
 run_chatbot_sanity_check() {
@@ -153,21 +156,21 @@ print_status "Syncing environment (uv sync)..."
 uv sync
 print_success "Dependencies installed successfully via uv"
 
-# Step 2: Configure LLM API keys
-print_status "Step 2: Setting up LLM configuration..."
-LLM_CONFIG_FILE="app/llm/.llm_config"
-LLM_CONFIG_EXAMPLE="app/llm/llm_config_example"
+# Step 2: Configure environment variables
+print_status "Step 2: Setting up environment configuration..."
+ENV_FILE="../.env"
+ENV_EXAMPLE="../env_example"
 
-if [ -f "$LLM_CONFIG_FILE" ]; then
-    print_status "LLM config file already exists"
+if [ -f "$ENV_FILE" ]; then
+    print_status ".env file already exists"
 else
-    print_status "Creating LLM config file from example..."
-    cp "$LLM_CONFIG_EXAMPLE" "$LLM_CONFIG_FILE"
-    print_success "LLM config file created"
-    print_status "Please edit $LLM_CONFIG_FILE with your actual API keys before running the chatbot"
+    print_status "Creating .env file from example..."
+    cp "$ENV_EXAMPLE" "$ENV_FILE"
+    print_success ".env file created"
+    print_status "Please edit $ENV_FILE with your actual API keys before running the chatbot"
 fi
 
-sanity_check_llm_keys "$LLM_CONFIG_FILE"
+sanity_check_env_keys "$ENV_FILE"
 
 # Step 3: Initialize database
 print_status "Step 3: Initializing database with sample jobs..."

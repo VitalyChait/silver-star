@@ -50,9 +50,9 @@ cd code/backend
 # Install dependencies from pyproject.toml
 uv sync
 
-# Configure LLM API keys
-cp app/llm/llm_config_example app/llm/.llm_config
-# Edit app/llm/.llm_config with your actual API keys
+# Configure environment variables
+cp ../env_example ../.env
+# Edit ../.env with your actual API keys and provider details
 
 # Initialize database
 uv run python populate_jobs.py
@@ -82,10 +82,11 @@ Once running, you can access:
 
 ### LLM Configuration
 
-The application uses Google's Gemini API for the chatbot functionality. You'll need to:
+The application uses environment variables (loaded from `code/.env`) to configure LLM access:
 
-1. Get an API key from [Google AI Studio](https://aistudio.google.com/app/apikey)
-2. Edit `code/backend/app/llm/.llm_config` and replace `your_gemini_api_key_here` with your actual API key
+1. Copy `code/env_example` to `code/.env`
+2. Get an API key from [Google AI Studio](https://aistudio.google.com/app/apikey)
+3. Update `code/.env` with your actual credentials and provider settings
 
 ### Database
 

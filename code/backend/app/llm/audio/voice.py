@@ -25,8 +25,6 @@ except ImportError:
     GTTS_AVAILABLE = False
     logging.warning("gTTS not available. Text-to-speech will not work without Google Cloud or pyttsx3.")
 
-from ..core.config import llm_config
-
 logger = logging.getLogger(__name__)
 
 
@@ -35,7 +33,6 @@ class VoiceService:
     
     def __init__(self):
         """Initialize the voice service."""
-        self.config = llm_config
         self._init_speech_client()
         self._init_tts_client()
         self._init_fallback_tts()

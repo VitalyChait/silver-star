@@ -126,7 +126,7 @@ def _norm(s: Any) -> str:
     return " ".join(str(s or "").lower().split())
 
 def _get_client() -> ScrapingBeeClient:
-    key = os.getenv("SCRAPINGBEE_API_KEY") or os.getenv("API_KEY")
+    key = os.getenv("SCRAPINGBEE_API_KEY")
     if not key:
         raise RuntimeError("Missing SCRAPINGBEE_API_KEY (or API_KEY).")
     return ScrapingBeeClient(api_key=key)
@@ -134,9 +134,9 @@ def _get_client() -> ScrapingBeeClient:
 def _site_from_intent(intent: Dict[str, Any], default_site: Optional[str] = None) -> str:
     """
     Resolve a Craigslist site subdomain from intent.location.city (best-effort).
-    Defaults to env CL_SITE_DEFAULT or 'boston'.
+    Defaults to env CL_SITE_DEFAULT.
     """
-    default_site = default_site or os.getenv("CL_SITE_DEFAULT", "boston")
+    default_site = default_site or os.getenv("CL_SITE_DEFAULT")
     loc = intent.get("location") or {}
     city = (loc.get("city") if isinstance(loc, dict) else loc) or ""
     if isinstance(city, str) and city.strip():
@@ -422,7 +422,7 @@ def fetch_craigslist(intent: Dict[str, Any], max_results: int = 60) -> Tuple[Lis
     client = _get_client()
 
     # Keep a stable session so cookies can persist across requests
-    session_id = os.getenv("SCRAPINGBEE_SESSION_ID", "cl_session_1")
+    session_id = os.getenv("SCRAPINGBEE_SESSION_ID")
 
     jobs: List[Dict[str, Any]] = []
     attempted: List[str] = []

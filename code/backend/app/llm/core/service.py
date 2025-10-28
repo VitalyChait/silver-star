@@ -5,7 +5,6 @@ from typing import Dict, List, Optional, Any
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
-from .config import llm_config
 
 logger = logging.getLogger(__name__)
 
@@ -15,13 +14,12 @@ class LLMService:
     
     def __init__(self):
         """Initialize the LLM service with configuration."""
-        self.config = llm_config
         self._initialize_gemini()
     
     def _initialize_gemini(self):
         """Initialize the Gemini API client."""
         try:
-            genai.configure(api_key=self.config.gemini_api_key)
+            genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
             
             # Configure safety settings
             safety_settings = {
@@ -33,11 +31,11 @@ class LLMService:
             
             # Initialize the model
             self.model = genai.GenerativeModel(
-                model_name=self.config.gemini_model,
+                model_name=os.getenv("GEMINI_MODEL"),
                 safety_settings=safety_settings
             )
             
-            logger.info(f"Initialized Gemini model: {self.config.gemini_model}")
+            logger.info(f"Initialized Gemini model: {os.getenv('GEMINI_MODEL')}")
         except Exception as e:
             logger.error(f"Failed to initialize Gemini: {str(e)}")
             raise
