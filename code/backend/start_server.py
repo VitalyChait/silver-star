@@ -96,6 +96,12 @@ if __name__ == "__main__":
         "propagate": False,
     })
 
+    # Capture all framework and application warnings/errors at root level
+    root_handlers = log_config.setdefault("root", {}).get("handlers", ["default"])
+    if "file" not in root_handlers:
+        root_handlers.append("file")
+    log_config["root"]["handlers"] = root_handlers
+
     bootstrap_log(f"Backend logs will also be written to {backend_log_file}")
     uvicorn.run(
         "app.main:app",

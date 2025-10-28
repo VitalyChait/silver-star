@@ -75,6 +75,7 @@
             border-radius: 18px;
             margin-bottom: 16px;
             line-height: 1.4;
+            white-space: pre-wrap;
         }
 
         .user-message {
@@ -113,6 +114,14 @@
 
         .typing-indicator span:nth-child(3) {
             animation-delay: 0.4s;
+        }
+
+        .hidden-bot-prompt {
+            display: none;
+        }
+
+        .bot-fallback {
+            display: inline;
         }
 
         @keyframes typing {
@@ -208,7 +217,7 @@
 
         <!-- Header --><header class="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-20">
             <div class="flex items-center">
-                <h1 class="ml-3 text-xl font-bold text-gray-100">SilverStar Assistant</h1>
+                <h1 class="ml-3 text-xl font-bold text-gray-100">SilverStar Asteroid Assistant Bot</h1>
             </div>
             <nav class="flex items-center gap-4">
                 <span id="user-name" class="text-gray-300"></span>
@@ -334,6 +343,366 @@
                 interests: '',
                 limitations: ''
             };
+
+            const fieldLabels = {
+                full_name: 'full name',
+                location: 'location',
+                age: 'age',
+                physical_condition: 'physical condition',
+                interests: 'interests',
+                limitations: 'limitations'
+            };
+
+            let activePendingEdit = null;
+            const pendingEditQueue = [];
+
+            function normalizeValue(value) {
+                return (value || '').trim().toLowerCase();
+            }
+
+            function escapeHtml(value) {
+                if (typeof value !== 'string') {
+                    return '';
+                }
+                return value
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            }
+
+            function finalizeCapturedValue(rawValue) {
+                if (!rawValue) {
+                    return '';
+                }
+
+                let cleaned = rawValue.trim().replace(/\s{2,}/g, ' ');
+                cleaned = cleaned.replace(/^[\s,.-]+/, '');
+                cleaned = cleaned.replace(/[.!?]+$/, '').trim();
+                cleaned = cleaned.replace(/\b(?:now|currently|right now|today|please|thanks|thank you)\b$/i, '').trim();
+                cleaned = cleaned.replace(/\s+(?:and|but|so)\s+(?:i|i'm|my)\b.*$/i, '').trim();
+                cleaned = cleaned.replace(/\s+because\s+i\b.*$/i, '').trim();
+                return cleaned;
+            }
+
+            function hasCapturedInfo(field) {
+                const value = (profileDraft[field] || '').trim();
+                if (!value) {
+                    return false;
+                }
+                if (field === 'age') {
+                    const numeric = parseInt(value, 10);
+                    return !Number.isNaN(numeric);
+                }
+                return true;
+            }
+
+            const promptPatterns = {
+                full_name: [
+                    /\b(full\s*name|your\s+name)\b/i,
+                    /\bwhat(?:'s| is)\s+your\s+name\b/i,
+                    /\bcould you (?:please )?(?:share|tell me)\s+(?:your\s+)?name\b/i
+                ],
+                location: [
+                    /\bwhere (?:are|r)\s+you\s+(?:located|based|living|from)\b/i,
+                    /\bwhat(?:'s| is)\s+your\s+location\b/i,
+                    /\bcould you (?:please )?(?:share|tell me)\s+(?:your\s+)?location\b/i
+                ],
+                age: [
+                    /\bhow\s+old\s+are\s+you\b/i,
+                    /\bwhat(?:'s| is)\s+your\s+age\b/i,
+                    /\bcould you (?:please )?(?:share|tell me)\s+(?:your\s+)?age\b/i
+                ],
+                physical_condition: [
+                    /\bdescribe\s+(?:your\s+)?physical\s+condition\b/i,
+                    /\bany\s+physical\s+limitations\b/i
+                ],
+                interests: [
+                    /\bwhat\s+are\s+your\s+interests\b/i,
+                    /\bwhat\s+do\s+you\s+enjoy\b/i
+                ],
+                limitations: [
+                    /\bdo\s+you\s+have\s+any\s+limitations\b/i,
+                    /\bwhat\s+limitations\s+do\s+you\s+have\b/i
+                ]
+            };
+
+            function filterBotResponse(content) {
+                if (!content) {
+                    return { html: '', hasVisible: false, hiddenApplied: false };
+                }
+
+                const segments = content.split(/\n+/);
+                const sentenceCandidates = [];
+                segments.forEach(segment => {
+                    const trimmed = segment.trim();
+                    if (!trimmed) {
+                        return;
+                    }
+                    const sentences = trimmed.match(/[^.!?]+[.!?]?/g);
+                    if (sentences) {
+                        sentences.forEach(sentence => {
+                            if (sentence && sentence.trim()) {
+                                sentenceCandidates.push(sentence.trim());
+                            }
+                        });
+                    } else {
+                        sentenceCandidates.push(trimmed);
+                    }
+                });
+
+                const fragments = [];
+                let hasVisible = false;
+                let hiddenApplied = false;
+                const hiddenFields = new Set();
+
+                sentenceCandidates.forEach(segment => {
+                    const text = segment.trim();
+                    if (!text) {
+                        return;
+                    }
+
+                    const shouldHide = Object.entries(promptPatterns).some(([field, patterns]) => {
+                        if (!hasCapturedInfo(field)) {
+                            return false;
+                        }
+                        const matches = patterns.some(pattern => pattern.test(text));
+                        if (matches) {
+                            hiddenFields.add(field);
+                        }
+                        return matches;
+                    });
+
+                    if (shouldHide) {
+                        fragments.push(`<span class="hidden-bot-prompt" aria-hidden="true">${escapeHtml(text)}</span>`);
+                        hiddenApplied = true;
+                    } else {
+                        fragments.push(escapeHtml(text));
+                        hasVisible = true;
+                    }
+                });
+
+                if (!hasVisible && hiddenApplied) {
+                    const hiddenFieldLabels = Array.from(hiddenFields).map(field => fieldLabels[field] || field);
+                    let fallbackText = 'Thanks for confirming!';
+                    if (hiddenFieldLabels.length > 0) {
+                        const readable = hiddenFieldLabels.length === 1
+                            ? hiddenFieldLabels[0]
+                            : `${hiddenFieldLabels.slice(0, -1).join(', ')} and ${hiddenFieldLabels.slice(-1)}`;
+                        fallbackText = `Thanks! We already have your ${readable}.`;
+                    }
+                    fragments.push(`<span class="bot-fallback">${escapeHtml(fallbackText)}</span>`);
+                    hasVisible = true;
+                }
+
+                return {
+                    html: fragments.join(' '),
+                    hasVisible,
+                    hiddenApplied
+                };
+            }
+
+            function applyDraftUpdate(field, value) {
+                if (!field || typeof value !== 'string') {
+                    return;
+                }
+                profileDraft[field] = value;
+                renderProfile();
+            }
+
+            function promptActivePendingEdit() {
+                if (!activePendingEdit) {
+                    return;
+                }
+                const label = fieldLabels[activePendingEdit.field] || activePendingEdit.field;
+                addBotMessage(`You already shared your ${label} as "${activePendingEdit.previousValue}". Do you want to change it to "${activePendingEdit.newValue}"?`);
+            }
+
+            function enqueuePendingEdit(field, newValue, previousValue) {
+                if (!field || !newValue || !previousValue) {
+                    return;
+                }
+
+                const normalizedNewValue = normalizeValue(newValue);
+                if (
+                    (activePendingEdit && activePendingEdit.field === field && normalizeValue(activePendingEdit.newValue) === normalizedNewValue) ||
+                    pendingEditQueue.some(item => item.field === field && normalizeValue(item.newValue) === normalizedNewValue)
+                ) {
+                    return;
+                }
+
+                pendingEditQueue.push({
+                    field,
+                    newValue,
+                    previousValue
+                });
+
+                if (!activePendingEdit) {
+                    activePendingEdit = pendingEditQueue.shift();
+                    promptActivePendingEdit();
+                }
+            }
+
+            function handlePendingEditResponse(message) {
+                if (!activePendingEdit) {
+                    return false;
+                }
+
+                const normalized = (message || '').trim().toLowerCase();
+                if (!normalized) {
+                    return false;
+                }
+
+                const affirmativePattern = /^(?:yes|yep|yeah|sure|correct|absolutely|please do|go ahead|affirmative)\b/;
+                const negativePattern = /^(?:no|nope|nah|not yet|don't|do not)\b/;
+
+                if (affirmativePattern.test(normalized)) {
+                    const { field, newValue } = activePendingEdit;
+                    applyDraftUpdate(field, newValue);
+                    const label = fieldLabels[field] || field;
+                    addBotMessage(`Thanks! I've updated your ${label} to "${newValue}".`);
+                    activePendingEdit = null;
+                    if (pendingEditQueue.length > 0) {
+                        activePendingEdit = pendingEditQueue.shift();
+                        promptActivePendingEdit();
+                    }
+                    return true;
+                }
+
+                if (negativePattern.test(normalized)) {
+                    const { field, previousValue } = activePendingEdit;
+                    const label = fieldLabels[field] || field;
+                    addBotMessage(`Got it. I'll keep your ${label} as "${previousValue}".`);
+                    activePendingEdit = null;
+                    if (pendingEditQueue.length > 0) {
+                        activePendingEdit = pendingEditQueue.shift();
+                        promptActivePendingEdit();
+                    }
+                    return true;
+                }
+
+                return false;
+            }
+
+            function extractProfileInfoFromMessage(message) {
+                const updates = [];
+                if (!message || typeof message !== 'string') {
+                    return updates;
+                }
+
+                const workingMessage = message.trim();
+                if (!workingMessage) {
+                    return updates;
+                }
+
+                const nameRegex = /(?:\bmy name is\b|\bi am\b|\bi'm\b|\bthis is\b)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i;
+                const nameMatch = workingMessage.match(nameRegex);
+                if (nameMatch) {
+                    const proposed = finalizeCapturedValue(nameMatch[1]);
+                    if (proposed && proposed.split(' ').length >= 2 && proposed.length <= 80) {
+                        updates.push({ field: 'full_name', value: proposed });
+                    }
+                }
+
+                const locationPatterns = [
+                    /(?:\bi (?:am|i'm|currently am|currently i'm|live|currently live|reside|stay)\s*(?:currently\s*)?(?:in|at)\s+)([^.?!]+)/i,
+                    /(?:\bi(?:'m)?\s*based in\s+)([^.?!]+)/i,
+                    /(?:\bi (?:hail from|come from|am from|i'm from)\s+)([^.?!]+)/i
+                ];
+
+                for (const pattern of locationPatterns) {
+                    const match = workingMessage.match(pattern);
+                    if (match && match[1]) {
+                        const proposed = finalizeCapturedValue(match[1]);
+                        if (proposed && proposed.length >= 3 && proposed.length <= 80 && /[a-zA-Z]/.test(proposed)) {
+                            updates.push({ field: 'location', value: proposed });
+                            break;
+                        }
+                    }
+                }
+
+                const ageRegex = /(?:\b(?:my age is|i am|i'm)\s+)(\d{1,3})(?:\s*(?:years old|yrs old|yrs|years|y\/o|yo))?\b/i;
+                const ageMatch = workingMessage.match(ageRegex);
+                if (ageMatch) {
+                    const ageNum = parseInt(ageMatch[1], 10);
+                    if (!Number.isNaN(ageNum) && ageNum >= 14 && ageNum <= 100) {
+                        updates.push({ field: 'age', value: `${ageNum}` });
+                    }
+                }
+
+                return updates;
+            }
+
+            async function shouldPromptForFieldChange(field, newValue, previousValue, sourceMessage) {
+                if (!conversationId || !token) {
+                    return false;
+                }
+
+                try {
+                    const response = await fetch(`${API_BASE_URL}/chatbot/profile/judge-change`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            conversation_id: conversationId,
+                            field,
+                            proposed_value: newValue,
+                            current_value: previousValue,
+                            message: sourceMessage
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Judge API error: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    return Boolean(data.should_prompt);
+                } catch (error) {
+                    console.error('Profile change judge failed:', error);
+                    return false;
+                }
+            }
+
+            async function handleUserMessageForProfile(message) {
+                if (!message) {
+                    return;
+                }
+
+                const handledConfirmation = handlePendingEditResponse(message);
+                const updates = extractProfileInfoFromMessage(message);
+
+                for (const { field, value } of updates) {
+                    if (!value) {
+                        continue;
+                    }
+                    const currentValue = profileDraft[field] || '';
+                    if (!currentValue.trim()) {
+                        applyDraftUpdate(field, value);
+                        const label = fieldLabels[field] || field;
+                        addBotMessage(`Noted your ${label} as "${value}".`);
+                        continue;
+                    }
+
+                    if (normalizeValue(currentValue) === normalizeValue(value)) {
+                        continue;
+                    }
+
+                    const shouldPrompt = await shouldPromptForFieldChange(field, value, currentValue, message);
+                    if (shouldPrompt) {
+                        enqueuePendingEdit(field, value, currentValue);
+                    }
+                }
+
+                if (!handledConfirmation && updates.length === 0 && activePendingEdit) {
+                    // If we are awaiting confirmation and the user responded with something unrelated,
+                    // give a gentle reminder without altering data.
+                    promptActivePendingEdit();
+                }
+            }
             
             // Check if user is logged in
             const token = localStorage.getItem('silverstar_token');
@@ -403,10 +772,15 @@
             const logoutButton = document.getElementById('logout-btn');
             
             // Add message to chat
-            function addMessage(content, isUser = false) {
+            function addMessage(content, isUser = false, options = {}) {
+                const { isHtml = false } = options;
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
-                messageDiv.textContent = content;
+                if (isHtml) {
+                    messageDiv.innerHTML = content;
+                } else {
+                    messageDiv.textContent = content;
+                }
                 
                 chatContainer.appendChild(messageDiv);
                 chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -414,12 +788,12 @@
                 return messageDiv;
             }
             
-            function addUserMessage(content) {
-                return addMessage(content, true);
+            function addUserMessage(content, options = {}) {
+                return addMessage(content, true, options);
             }
             
-            function addBotMessage(content) {
-                return addMessage(content, false);
+            function addBotMessage(content, options = {}) {
+                return addMessage(content, false, options);
             }
             
             function showTypingIndicator() {
@@ -502,19 +876,39 @@
 
             function syncProfileFromBackend(info) {
                 if (!info) return;
+
+                const previousCandidate = { ...candidateInfo };
+                const previousDraft = { ...profileDraft };
+
                 candidateInfo = {
                     ...candidateInfo,
                     ...info,
                     validation: info.validation || null
                 };
-                profileDraft = {
-                    full_name: candidateInfo.full_name || '',
-                    location: candidateInfo.location || '',
-                    age: candidateInfo.age || '',
-                    physical_condition: candidateInfo.physical_condition || '',
-                    interests: candidateInfo.interests || '',
-                    limitations: candidateInfo.limitations || ''
-                };
+
+                const nextDraft = { ...previousDraft };
+
+                profileFields.forEach(field => {
+                    const backendValueRaw = candidateInfo[field];
+                    const backendValue = typeof backendValueRaw === 'string' ? backendValueRaw : (backendValueRaw ?? '');
+
+                    const prevDraftValueRaw = previousDraft[field];
+                    const prevDraftValue = typeof prevDraftValueRaw === 'string' ? prevDraftValueRaw : (prevDraftValueRaw ?? '');
+                    const trimmedPrevDraft = (prevDraftValue || '').trim();
+
+                    const prevCandidateValueRaw = previousCandidate[field];
+                    const prevCandidateValue = typeof prevCandidateValueRaw === 'string' ? prevCandidateValueRaw : (prevCandidateValueRaw ?? '');
+                    const trimmedPrevCandidate = (prevCandidateValue || '').trim();
+
+                    const draftMatchesPrevCandidate = trimmedPrevDraft === trimmedPrevCandidate;
+                    const draftIsEmpty = trimmedPrevDraft === '';
+
+                    if (draftMatchesPrevCandidate || draftIsEmpty) {
+                        nextDraft[field] = backendValue || '';
+                    }
+                });
+
+                profileDraft = nextDraft;
                 renderProfile();
             }
 
@@ -558,7 +952,10 @@
                         conversationId = data.conversation_id;
                     }
                     if (data.message) {
-                        addBotMessage(data.message);
+                        const filteredMessage = filterBotResponse(data.message);
+                        if (filteredMessage.html) {
+                            addBotMessage(filteredMessage.html, { isHtml: true });
+                        }
                     }
                 } catch (error) {
                     console.error('Error saving profile:', error);
@@ -616,6 +1013,7 @@
                 try {
                     if (showUserMessage) {
                         addUserMessage(trimmedMessage);
+                        await handleUserMessageForProfile(trimmedMessage);
                     }
                     
                     typingIndicator = showTypingIndicator();
@@ -638,7 +1036,10 @@
                     
                     const data = await response.json();
                     
-                    addBotMessage(data.response);
+                    const filteredResponse = filterBotResponse(data.response);
+                    if (filteredResponse.html) {
+                        addBotMessage(filteredResponse.html, { isHtml: true });
+                    }
                     conversationId = data.conversation_id;
                     
                     if (data.candidate_info) {

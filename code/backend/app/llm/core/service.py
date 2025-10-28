@@ -42,8 +42,8 @@ class LLMService:
             raise
     
     async def generate_response(
-        self, 
-        prompt: str, 
+        self,
+        prompt: str,
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: float = 0.7,
         max_output_tokens: int = 1024
@@ -92,13 +92,62 @@ class LLMService:
                 )
             
             # Check if the response was filtered
-            if response.candidates[0].finish_reason.name == "SAFETY":
-                logger.warning("Response was filtered for safety reasons")
+            if not response.candidates:
+                logger.error("Gemini returned no candidates. prompt=%r", prompt[:200])
+                return "I'm having trouble generating a response right now. Could you please try again?"
+
+            candidate = next(
+                (
+                    c for c in response.candidates
+                    if getattr(c, "content", None)
+                    and getattr(c.content, "parts", None)
+                ),
+                response.candidates[0]
+            )
+
+            finish_reason = getattr(candidate, "finish_reason", None)
+            finish_reason_name = getattr(finish_reason, "name", str(finish_reason))
+
+            if finish_reason_name == "SAFETY":
+                logger.warning("Response was filtered for safety reasons. prompt=%r", prompt[:200])
                 return "I apologize, but I cannot provide a response to that request due to safety guidelines."
-            
-            return response.text
+
+            text_parts: List[str] = []
+            if getattr(candidate, "content", None) and getattr(candidate.content, "parts", None):
+                for part in candidate.content.parts:
+                    part_text = getattr(part, "text", None)
+                    if part_text:
+                        text_parts.append(part_text)
+
+            generated_text = "".join(text_parts).strip()
+
+            if generated_text:
+                return generated_text
+
+            # Fall back to response.text accessor if available
+            try:
+                generated_text = getattr(response, "text", "").strip()
+                if generated_text:
+                    return generated_text
+            except Exception as text_error:  # pylint: disable=broad-except
+                logger.error(
+                    "Gemini response.text accessor failed: %s. finish_reason=%s",
+                    text_error,
+                    finish_reason_name
+                )
+
+            logger.error(
+                "Gemini returned no textual content. finish_reason=%s prompt_preview=%r",
+                finish_reason_name,
+                prompt[:200]
+            )
+            if finish_reason_name == "MAX_TOKENS":
+                logger.info(
+                    "User prompt exceeded generation limits; ask the user to simplify input."
+                )
+            return "I'm having trouble generating a response right now. Could you please try again?"
         except Exception as e:
-            logger.error(f"Error generating response: {str(e)}")
+            logger.exception("Unexpected Gemini error for prompt %r: %s", prompt[:200], e)
             # Return a fallback response instead of raising an exception
             return "I'm having trouble generating a response right now. Could you please try again?"
     

@@ -95,6 +95,20 @@ class ProfileUpdateResponse(BaseModel):
     conversation_id: str
 
 
+class FieldChangeJudgeRequest(BaseModel):
+    conversation_id: str
+    field: str
+    proposed_value: str
+    current_value: Optional[str] = None
+    message: str
+
+
+class FieldChangeJudgeResponse(BaseModel):
+    should_prompt: bool
+    confidence: float
+    reason: Optional[str] = None
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_bot(
     message: ChatMessage,
@@ -208,6 +222,41 @@ async def update_profile_details(
     except Exception as e:  # pylint: disable=broad-except
         logger.error(f"Error updating profile: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to update profile information")
+
+
+@router.post("/profile/judge-change", response_model=FieldChangeJudgeResponse)
+async def judge_profile_change(request: FieldChangeJudgeRequest):
+    """Ask the LLM judge whether a field change likely reflects a new answer."""
+    if not chatbot_available:
+        raise HTTPException(status_code=503, detail="Chatbot functionality is not available")
+
+    try:
+        conversation_id = request.conversation_id
+        if not conversation_id:
+            raise HTTPException(status_code=400, detail="conversation_id is required")
+
+        if conversation_id not in chatbot_sessions:
+            chatbot_sessions[conversation_id] = CandidateChatbot()
+
+        chatbot = chatbot_sessions[conversation_id]
+
+        decision = await chatbot.judge_field_change(
+            request.field,
+            request.proposed_value,
+            request.current_value,
+            request.message
+        )
+
+        return FieldChangeJudgeResponse(
+            should_prompt=bool(decision.get("should_replace")),
+            confidence=float(decision.get("confidence", 0.0)),
+            reason=decision.get("reason")
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.error("Error judging profile change: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to evaluate profile change")
 
 
 @router.post("/reset")

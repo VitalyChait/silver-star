@@ -84,6 +84,39 @@ class CandidateChatbot:
             if parts:
                 return parts[0]
         return None
+    
+    def _conversation_snippet(self, turns: int = 6) -> str:
+        """Return the last few conversation turns formatted for prompts."""
+        if not self.conversation_history:
+            return "No prior conversation."
+        snippet = self.conversation_history[-turns:]
+        lines = []
+        for turn in snippet:
+            role = turn.get("role", "assistant")
+            content = turn.get("content", "")
+            lines.append(f"{role.capitalize()}: {content}")
+        return "\n".join(lines)
+
+    @staticmethod
+    def _detect_full_name_from_message(message: str) -> Optional[str]:
+        """Attempt to extract a full name using lightweight heuristics."""
+        if not message:
+            return None
+
+        patterns = [
+            r"(?:my name is|i'm|i am|call me)\s+([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)",
+            r"^(?:hi|hello|hey)[,\s]*(?:i'm|i am)?\s*([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)",
+            r"^([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)$",
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, message, re.IGNORECASE)
+            if match:
+                candidate_name = match.group(1).strip(" ,.!?")
+                if 2 <= len(candidate_name) <= 80:
+                    cleaned = re.sub(r"\s+", " ", candidate_name).title()
+                    return cleaned
+        return None
 
     async def process_message(
         self, 
@@ -147,7 +180,15 @@ class CandidateChatbot:
         
         # Process based on current conversation state
         if self.conversation_state == "greeting":
-            response = await self._handle_greeting()
+            detected_name = self._detect_full_name_from_message(message)
+            if detected_name:
+                self.candidate_info["full_name"] = detected_name
+                self.conversation_state = "collecting_location"
+                response = f"Nice to meet you, {detected_name}! Where are you currently located?"
+                self.last_question = response
+                self.last_question_type = "location"
+            else:
+                response = await self._handle_greeting()
         elif self.conversation_state == "collecting_full_name":
             response = await self._extract_full_name(message, validated_value)
         elif self.conversation_state == "collecting_location":
@@ -177,6 +218,85 @@ class CandidateChatbot:
             await self._play_response_audio(response)
         
         return response, self.candidate_info
+    
+    async def judge_field_change(
+        self,
+        field: str,
+        proposed_value: str,
+        current_value: Optional[str],
+        source_message: str
+    ) -> Dict[str, Any]:
+        """Use LLM to judge whether a field change is intentional."""
+        label = self.FIELD_LABEL_MAP.get(field, field)
+        schema = {
+            "should_replace": "boolean",
+            "confidence": "number",
+            "reason": "string"
+        }
+
+        prompt = f"""
+        You help maintain an intake profile for a community job placement program.
+        Determine whether the candidate is intentionally providing a new value for the field "{label}".
+
+        Current recorded value: {json.dumps(current_value) if current_value else "null"}
+        Proposed new value: {json.dumps(proposed_value)}
+        Latest user message: {json.dumps(source_message)}
+
+        Recent conversation:
+        {self._conversation_snippet()}
+
+        Evaluate if the latest user message clearly updates the {label}.
+        Respond in JSON with:
+        {{
+          "should_replace": true/false,
+          "confidence": number between 0 and 1,
+          "reason": "brief explanation"
+        }}
+
+        Only set "should_replace" to true when the user explicitly provides a new {label}.
+        Otherwise, return false with confidence reflecting uncertainty.
+        """
+
+        try:
+            decision = await llm_service.extract_structured_data(
+                prompt,
+                schema,
+                self.conversation_history
+            )
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.error("LLM judge failed: %s", exc)
+            return {"should_replace": False, "confidence": 0.0, "reason": "judge_error"}
+
+        raw_should = decision.get("should_replace")
+        if isinstance(raw_should, bool):
+            should_replace = raw_should
+        elif isinstance(raw_should, str):
+            should_replace = raw_should.strip().lower() in {"true", "yes", "1", "y"}
+        else:
+            should_replace = False
+        confidence = decision.get("confidence")
+        try:
+            confidence_value = float(confidence) if confidence is not None else 0.0
+        except (TypeError, ValueError):
+            confidence_value = 0.0
+
+        reason = decision.get("reason") or "no_reason_provided"
+        logger.info(
+            "Field change judge result | field=%s | should_replace=%s | confidence=%.2f | reason=%s | proposed=%s",
+            field,
+            should_replace,
+            confidence_value,
+            reason,
+            proposed_value
+        )
+
+        threshold = 0.75
+        return {
+            "should_replace": should_replace and confidence_value >= threshold,
+            "confidence": confidence_value,
+            "raw_decision": should_replace,
+            "reason": reason
+        }
     
     async def _play_response_audio(self, response: str) -> None:
         """
@@ -210,19 +330,7 @@ class CandidateChatbot:
                 extracted_name = extracted_name.title()
 
         if not extracted_name:
-            patterns = [
-                r"(?:my name is|i'm|i am|call me)\s+([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)",
-                r"^(?:hi|hello|hey)[,\s]*(?:i'm|i am)?\s*([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)",
-                r"^([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)$",
-            ]
-
-            for pattern in patterns:
-                match = re.search(pattern, message, re.IGNORECASE)
-                if match:
-                    candidate_name = match.group(1).strip(" ,.!?")
-                    if 2 <= len(candidate_name) <= 80:
-                        extracted_name = re.sub(r"\s+", " ", candidate_name).title()
-                        break
+            extracted_name = self._detect_full_name_from_message(message)
 
         if extracted_name:
             self.candidate_info["full_name"] = extracted_name
