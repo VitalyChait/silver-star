@@ -111,6 +111,16 @@ class LLMService:
             if finish_reason_name == "SAFETY":
                 logger.warning("Response was filtered for safety reasons. prompt=%r", prompt[:200])
                 return "I apologize, but I cannot provide a response to that request due to safety guidelines."
+            if finish_reason_name == "MAX_TOKENS":
+                history_chars = 0
+                if conversation_history:
+                    history_chars = sum(len(entry.get("content", "")) for entry in conversation_history)
+                logger.warning(
+                    "Gemini hit token limit. prompt_chars=%d history_chars=%d max_output_tokens=%s",
+                    len(prompt),
+                    history_chars,
+                    max_output_tokens,
+                )
 
             text_parts: List[str] = []
             if getattr(candidate, "content", None) and getattr(candidate.content, "parts", None):

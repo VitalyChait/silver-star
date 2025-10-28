@@ -3,6 +3,7 @@ import logging
 from typing import Any, Dict, List
 
 from ..core.service import llm_service
+from ..core.utils import compact_json, strip_json_code_fences
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +42,10 @@ class ProfileValidationService:
             )
 
         try:
-            profile_snapshot = json.dumps(
+            profile_snapshot = compact_json(
                 {field: profile.get(field) for field in self.REQUIRED_FIELDS},
-                indent=2,
+                max_field_length=220,
+                max_total_chars=1400,
             )
 
             validation_prompt = f"""
@@ -68,17 +70,10 @@ class ProfileValidationService:
             """
 
             llm_response = await llm_service.generate_response(
-                validation_prompt, temperature=0.2, max_output_tokens=512
+                validation_prompt, temperature=0.2, max_output_tokens=400
             )
 
-            if llm_response.startswith("```json"):
-                llm_response = llm_response[7:]
-            if llm_response.startswith("```"):
-                llm_response = llm_response[3:]
-            if llm_response.endswith("```"):
-                llm_response = llm_response[:-3]
-
-            llm_result = json.loads(llm_response.strip())
+            llm_result = json.loads(strip_json_code_fences(llm_response))
 
             for key in result:
                 if key in llm_result and llm_result[key] is not None:

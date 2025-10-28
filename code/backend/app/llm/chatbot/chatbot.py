@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Tuple, Any
 import re
 
 from ..core.service import llm_service
+from ..core.utils import compact_json, strip_json_code_fences
 from .recommendations import job_recommendation_service
 from .validation import answer_validator
 from .profile_validator import profile_validation_service
@@ -636,7 +637,11 @@ class CandidateChatbot:
         notes = validation.get("notes")
 
         if not summary:
-            profile_snapshot = json.dumps({k: self.candidate_info.get(k) for k in self.FIELD_KEYS}, indent=2)
+            profile_snapshot = compact_json(
+                {k: self.candidate_info.get(k) for k in self.FIELD_KEYS},
+                max_field_length=220,
+                max_total_chars=1400,
+            )
             summary_prompt = f"""
             Craft a concise, friendly summary of this candidate profile for Silver Star:
             {profile_snapshot}
@@ -688,7 +693,7 @@ class CandidateChatbot:
         You are preparing an executive summary for a job placement team.
 
         Candidate profile:
-        {json.dumps(profile_snapshot, indent=2)}
+        {compact_json(profile_snapshot, max_field_length=220, max_total_chars=1400)}
 
         Produce a JSON document with this schema:
         {{
@@ -719,14 +724,7 @@ class CandidateChatbot:
                 max_output_tokens=600,
             )
 
-            if response.startswith("```json"):
-                response = response[7:]
-            if response.startswith("```"):
-                response = response[3:]
-            if response.endswith("```"):
-                response = response[:-3]
-
-            parsed = json.loads(response.strip())
+            parsed = json.loads(strip_json_code_fences(response))
 
             if not isinstance(parsed, dict):
                 raise ValueError("Executive summary response is not a JSON object")
