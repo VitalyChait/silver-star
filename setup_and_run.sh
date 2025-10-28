@@ -172,6 +172,12 @@ fi
 
 sanity_check_env_keys "$ENV_FILE"
 
+print_status "Loading environment variables from $ENV_FILE"
+set -a
+source "$ENV_FILE"
+set +a
+print_success "Environment variables loaded"
+
 # Step 3: Initialize database
 print_status "Step 3: Initializing database with sample jobs..."
 if [ -f "data.db" ]; then
