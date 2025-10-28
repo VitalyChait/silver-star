@@ -353,6 +353,38 @@
                 limitations: 'limitations'
             };
 
+            const blockedNameTokens = new Set([
+                'hi',
+                'hello',
+                'hey',
+                'hiya',
+                'greetings',
+                'morning',
+                'afternoon',
+                'evening',
+                'thanks',
+                'thank',
+                'yo',
+                'sup',
+                'hola',
+                'in',
+                'at',
+                'from',
+                'on',
+                'of',
+                'the',
+                'good',
+                'great',
+                'fine',
+                'okay',
+                'ok',
+                'awesome',
+                'well',
+                'alright',
+                'cool',
+                'tired'
+            ]);
+
             let activePendingEdit = null;
             const pendingEditQueue = [];
 
@@ -384,6 +416,28 @@
                 cleaned = cleaned.replace(/\s+(?:and|but|so)\s+(?:i|i'm|my)\b.*$/i, '').trim();
                 cleaned = cleaned.replace(/\s+because\s+i\b.*$/i, '').trim();
                 return cleaned;
+            }
+
+            function isLikelyNameCandidate(value) {
+                const candidate = (value || '').trim();
+                if (!candidate) {
+                    return false;
+                }
+                if (candidate.length < 2 || candidate.length > 80) {
+                    return false;
+                }
+                if (/\d/.test(candidate)) {
+                    return false;
+                }
+                const lower = candidate.toLowerCase();
+                if (lower.startsWith('not ')) {
+                    return false;
+                }
+                const tokens = lower.split(/\s+/);
+                if (tokens[0] && blockedNameTokens.has(tokens[0])) {
+                    return false;
+                }
+                return true;
             }
 
             function hasCapturedInfo(field) {
@@ -596,12 +650,32 @@
                     return updates;
                 }
 
-                const nameRegex = /(?:\bmy name is\b|\bi am\b|\bi'm\b|\bthis is\b)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i;
-                const nameMatch = workingMessage.match(nameRegex);
-                if (nameMatch) {
-                    const proposed = finalizeCapturedValue(nameMatch[1]);
-                    if (proposed && proposed.split(' ').length >= 2 && proposed.length <= 80) {
-                        updates.push({ field: 'full_name', value: proposed });
+                if (/name/i.test(workingMessage)) {
+                    const correctionMatches = [...workingMessage.matchAll(/(?:it\s*(?:'s| is)\s+)([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)+)/gi)];
+                    correctionMatches.forEach(match => {
+                        if (!match[1]) return;
+                        const proposed = finalizeCapturedValue(match[1]);
+                        if (isLikelyNameCandidate(proposed)) {
+                            updates.push({ field: 'full_name', value: proposed });
+                        }
+                    });
+                }
+
+                const namePatterns = [
+                    /(?:\bmy name is\b|\bi am\b|\bi'm\b|\bthis is\b|call me)\s+([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)/i,
+                    /^(?:hi|hello|hey)[,\s]*(?:i'm|i am)?\s*([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)/i
+                ];
+                for (const pattern of namePatterns) {
+                    const nameMatch = workingMessage.match(pattern);
+                    if (nameMatch && nameMatch[1]) {
+                        let proposed = finalizeCapturedValue(nameMatch[1]);
+                        const correction = proposed.match(/(?:it\s*(?:'s| is)\s+)([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)+)/i);
+                        if (correction && correction[1]) {
+                            proposed = finalizeCapturedValue(correction[1]);
+                        }
+                        if (isLikelyNameCandidate(proposed)) {
+                            updates.push({ field: 'full_name', value: proposed });
+                        }
                     }
                 }
 
@@ -631,7 +705,20 @@
                     }
                 }
 
-                return updates;
+                const seen = new Set();
+                const uniqueUpdates = [];
+                updates.forEach(update => {
+                    if (!update.value) {
+                        return;
+                    }
+                    const key = `${update.field}:${normalizeValue(update.value)}`;
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        uniqueUpdates.push(update);
+                    }
+                });
+
+                return uniqueUpdates;
             }
 
             async function shouldPromptForFieldChange(field, newValue, previousValue, sourceMessage) {

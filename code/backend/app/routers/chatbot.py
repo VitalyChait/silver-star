@@ -142,7 +142,7 @@ async def chat_with_bot(
             conversation_id=conversation_id
         )
     except Exception as e:
-        logger.error(f"Error in chat endpoint: {str(e)}")
+        logger.exception("Error in chat endpoint: %s", e)
         raise HTTPException(status_code=500, detail="Failed to process chat message")
 
 

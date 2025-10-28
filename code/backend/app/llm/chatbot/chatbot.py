@@ -51,6 +51,37 @@ class CandidateChatbot:
         "interests": "areas of interest",
         "limitations": "limitations",
     }
+    NON_NAME_TOKENS = {
+        "hi",
+        "hello",
+        "hey",
+        "hiya",
+        "greetings",
+        "morning",
+        "afternoon",
+        "evening",
+        "thanks",
+        "thank",
+        "yo",
+        "hola",
+        "sup",
+        "in",
+        "at",
+        "from",
+        "on",
+        "of",
+        "the",
+        "good",
+        "great",
+        "fine",
+        "okay",
+        "ok",
+        "awesome",
+        "well",
+        "alright",
+        "cool",
+        "tired",
+    }
     
     def __init__(self, enable_audio: bool = False):
         """
@@ -98,12 +129,20 @@ class CandidateChatbot:
             lines.append(f"{role.capitalize()}: {content}")
         return "\n".join(lines)
 
-    @staticmethod
-    def _detect_full_name_from_message(message: str) -> Optional[str]:
+    @classmethod
+    def _detect_full_name_from_message(cls, message: str) -> Optional[str]:
         """Attempt to extract a full name using lightweight heuristics."""
         if not message:
             return None
 
+        correction_candidates: List[str] = []
+        if "name" in message.lower():
+            for match in re.finditer(
+                r"(?:it\s+(?:is|s))\s+([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)+)",
+                message,
+                re.IGNORECASE,
+            ):
+                correction_candidates.append(match.group(1))
         patterns = [
             r"(?:my name is|i'm|i am|call me)\s+([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)",
             r"^(?:hi|hello|hey)[,\s]*(?:i'm|i am)?\s*([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)",
@@ -113,10 +152,36 @@ class CandidateChatbot:
         for pattern in patterns:
             match = re.search(pattern, message, re.IGNORECASE)
             if match:
-                candidate_name = match.group(1).strip(" ,.!?")
-                if 2 <= len(candidate_name) <= 80:
-                    cleaned = re.sub(r"\s+", " ", candidate_name).title()
-                    return cleaned
+                correction_candidates.append(match.group(1))
+
+        for raw_candidate in correction_candidates:
+            if not raw_candidate:
+                continue
+            candidate_name = re.sub(r"\s+", " ", raw_candidate).strip(" ,.!?")
+            correction_match = re.search(
+                r"(?:it\s+(?:is|s))\s+([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)+)$",
+                candidate_name,
+                re.IGNORECASE,
+            )
+            if correction_match:
+                candidate_name = correction_match.group(1).strip(" ,.!?")
+
+            if not (2 <= len(candidate_name) <= 80):
+                continue
+            if candidate_name.lower().startswith("not "):
+                continue
+            if any(char.isdigit() for char in candidate_name):
+                continue
+
+            tokens = candidate_name.split()
+            first_token_lower = tokens[0].lower()
+            if first_token_lower in cls.NON_NAME_TOKENS:
+                continue
+
+            cleaned = " ".join(token.capitalize() for token in tokens)
+            if cleaned.lower() in cls.NON_NAME_TOKENS:
+                continue
+            return cleaned
         return None
 
     async def process_message(
@@ -179,6 +244,15 @@ class CandidateChatbot:
                 
                 return response, self.candidate_info
         
+        inline_name = None
+        if message:
+            inline_name = self._detect_full_name_from_message(message)
+        if inline_name:
+            current_name = self.candidate_info.get("full_name")
+            name_mentioned = "name" in message.lower()
+            if inline_name != current_name and (self.conversation_state in {"collecting_full_name"} or name_mentioned or not current_name):
+                self.candidate_info["full_name"] = inline_name
+
         # Process based on current conversation state
         if self.conversation_state == "greeting":
             detected_name = self._detect_full_name_from_message(message)

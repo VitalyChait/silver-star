@@ -70,9 +70,10 @@ class AnswerValidator:
         """
         
         try:
+            history_tail = conversation_history[-6:] if conversation_history else None
             response = await llm_service.generate_response(
                 validation_prompt,
-                conversation_history,
+                history_tail,
                 temperature=0.1  # Lower temperature for more consistent validation
             )
             
