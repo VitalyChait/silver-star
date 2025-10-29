@@ -109,6 +109,7 @@ class CandidateChatbot:
         self.last_question_type = None  # Track the type of the last question
         self.enable_audio = enable_audio  # Whether to play audio responses
         self.retry_counts: Dict[str, int] = {}
+        self._pending_correction: Optional[Dict[str, str]] = None
 
     def _next_missing_field(self) -> Optional[str]:
         for key in self.FIELD_KEYS:
@@ -247,12 +248,16 @@ class CandidateChatbot:
             r"(?:from)\s+([A-Za-z0-9 ,'-]+)",
             r"^(?:in\s+)?([A-Za-z0-9 ,'-]+)$",
         ]
+        exclusion = re.compile(r"\b(health|condition|interests?|limitations?|remote|computer|drive|driving)\b", re.IGNORECASE)
         for pattern in patterns:
             m = re.search(pattern, message, re.IGNORECASE)
             if m:
                 candidate = m.group(1).strip(" .,!")
                 if 2 <= len(candidate) <= 100:
-                    return re.sub(r"\s+", " ", candidate)
+                    candidate = re.sub(r"\s+", " ", candidate)
+                    if exclusion.search(candidate):
+                        continue
+                    return candidate
         return None
 
     @staticmethod
@@ -274,6 +279,40 @@ class CandidateChatbot:
                 if value:
                     return value
         return None
+
+    @staticmethod
+    def _detect_common_corrections(field: str, value: str) -> Optional[str]:
+        """Detect simple, high-confidence typo corrections for specific fields.
+
+        Returns the corrected string if a likely typo was found; otherwise None.
+        """
+        if not value:
+            return None
+        text = value
+        # Physical condition: common 'no' -> 'ho' slip
+        if field == "physical_condition":
+            corrected = re.sub(r"\b[hg]o\s+health\b", "no health", text, flags=re.IGNORECASE)
+            if corrected != text:
+                return corrected
+        return None
+
+    def _maybe_confirm_correction(self, field: str, original: str, corrected: str) -> Optional[str]:
+        """Ask the user to confirm an auto-correction. Returns a prompt if asked."""
+        if not corrected or corrected.strip().lower() == original.strip().lower():
+            return None
+        label = self.FIELD_LABEL_MAP.get(field, field.replace("_", " "))
+        self._pending_correction = {
+            "field": field,
+            "original": original,
+            "corrected": corrected,
+        }
+        prompt = (
+            f"Just to confirm, for your {label}, did you mean \"{corrected}\" instead of \"{original}\"? "
+            "You can say yes or no."
+        )
+        self.last_question = prompt
+        self.last_question_type = "confirm_correction"
+        return prompt
 
     @staticmethod
     def _detect_interests_from_message(message: str) -> Optional[str]:
@@ -432,6 +471,30 @@ class CandidateChatbot:
         validated_value = None
         # If we asked a question in the previous turn, validate the answer
         if self.last_question and self.last_question_type:
+            # Handle pending correction confirmation first
+            if self.last_question_type == "confirm_correction" and self._pending_correction:
+                norm = (message or "").strip().lower()
+                yes = {"yes", "yep", "yeah", "correct", "right", "ok", "okay"}
+                no = {"no", "nope", "nah", "incorrect", "wrong"}
+                if any(w == norm or norm.startswith(w) for w in yes):
+                    fld = self._pending_correction["field"]
+                    val = self._pending_correction["corrected"]
+                    self.candidate_info[fld] = val
+                    self._pending_correction = None
+                    self.last_question = None
+                    self.last_question_type = None
+                    # Continue as normal after applying
+                elif any(w == norm or norm.startswith(w) for w in no):
+                    # Keep original, discard correction
+                    self._pending_correction = None
+                    self.last_question = None
+                    self.last_question_type = None
+                else:
+                    # Ask again briefly
+                    response = "Please reply yes or no so I can confirm the correction."
+                    self.conversation_history.append({"role": "assistant", "content": response})
+                    return response, self.candidate_info
+
             validation_result = await answer_validator.validate_answer(
                 self.last_question,
                 message,
@@ -1017,7 +1080,14 @@ class CandidateChatbot:
                 condition = extracted.get("physical_condition") if extracted else None
 
             if condition:
-                self.candidate_info["physical_condition"] = condition.strip()
+                condition = condition.strip()
+                # Check for simple, high-confidence typo corrections
+                corrected = self._detect_common_corrections("physical_condition", condition)
+                if corrected:
+                    maybe = self._maybe_confirm_correction("physical_condition", condition, corrected)
+                    if maybe:
+                        return maybe
+                self.candidate_info["physical_condition"] = condition
                 # Also attempt to capture interests from the same message to avoid re-asking
                 inline_interests = self._detect_interests_from_message(message)
                 if inline_interests:
@@ -1112,7 +1182,15 @@ class CandidateChatbot:
                 limitations = extracted.get("limitations") if extracted else None
 
             if limitations:
-                self.candidate_info["limitations"] = self._normalize_limitations(limitations.strip())
+                proposed = self._normalize_limitations(limitations.strip())
+                # sanity: do not accept if this clearly looks like a location or interest spillover
+                if re.search(r"\b(Boston|MA|USA|street|road|avenue|interest|teaching|wood)\b", proposed, re.IGNORECASE):
+                    # Ask for clarification instead of setting a wrong value
+                    response = "Could you confirm your limitations (e.g., 'no remote work', 'no driving over 3 hours')?"
+                    self.last_question = response
+                    self.last_question_type = "limitations"
+                    return response
+                self.candidate_info["limitations"] = proposed
             else:
                 self.candidate_info["limitations"] = None
 
