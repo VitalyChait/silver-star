@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from typing import Dict, List, Optional, Tuple, Any
 import re
 
@@ -107,6 +108,20 @@ class CandidateChatbot:
         self.last_question = None  # Track the last question asked
         self.last_question_type = None  # Track the type of the last question
         self.enable_audio = enable_audio  # Whether to play audio responses
+
+    def seed_profile(self, profile: Dict[str, Any]) -> None:
+        """Seed the chatbot with a pre-existing user profile and move to confirmation state.
+
+        This does not overwrite values with empty strings; only truthy strings are applied.
+        """
+        for key in self.FIELD_KEYS:
+            val = profile.get(key)
+            if isinstance(val, str):
+                val = val.strip()
+            if val:
+                self.candidate_info[key] = val
+        # Ask for confirmation on the next user turn
+        self.conversation_state = "confirming_profile"
 
     def _preferred_name(self) -> Optional[str]:
         """Return a friendly form of the candidate's name for responses."""
@@ -264,6 +279,10 @@ class CandidateChatbot:
                 self.last_question_type = "location"
             else:
                 response = await self._handle_greeting()
+        elif self.conversation_state == "confirming_profile":
+            response = await self._confirm_profile(message)
+        elif self.conversation_state == "awaiting_field_selection":
+            response = await self._choose_field_to_edit(message)
         elif self.conversation_state == "collecting_full_name":
             response = await self._extract_full_name(message, validated_value)
         elif self.conversation_state == "collecting_location":
@@ -384,12 +403,111 @@ class CandidateChatbot:
             await audio_player.play_text(response)
         except Exception as e:
             logger.error(f"Error playing audio response: {str(e)}")
+
+    def _profile_summary_snippet(self) -> str:
+        parts = []
+        for key in self.FIELD_KEYS:
+            value = self.candidate_info.get(key)
+            if value:
+                label = self.FIELD_LABEL_MAP.get(key, key.replace("_", " "))
+                parts.append(f"{label}: {value}")
+        return "; ".join(parts) if parts else "no details yet"
+
+    async def _confirm_profile(self, message: str) -> str:
+        """Handle the profile confirmation flow."""
+        # If we haven't asked yet, present the summary and ask for confirmation
+        if self.last_question_type != "confirm_profile":
+            summary = self._profile_summary_snippet()
+            prompt = (
+                f"I have your current profile as {summary}. Is the information presented on the page still correct? "
+                "You can say 'all good' or tell me what to update."
+            )
+            self.last_question = prompt
+            self.last_question_type = "confirm_profile"
+            return prompt
+
+        normalized = (message or "").strip().lower()
+        if not normalized:
+            return "Could you confirm if your profile details are correct, or tell me what to update?"
+
+        affirmative = {"yes", "yep", "yeah", "correct", "all good", "looks good", "good", "ok", "okay"}
+        negative = {"no", "nope", "not quite", "update", "change", "edit"}
+
+        if any(word in normalized for word in affirmative):
+            # Proceed to validation to fill any gaps, else move to profile_complete
+            self.conversation_state = "validating_profile"
+            self.last_question = None
+            self.last_question_type = None
+            return await self._validate_profile()
+
+        if any(word in normalized for word in negative):
+            self.conversation_state = "awaiting_field_selection"
+            question = (
+                "Sure — which field would you like to update first? "
+                "You can say full name, location, age, physical condition, interests, or limitations."
+            )
+            self.last_question = question
+            self.last_question_type = "choose_field"
+            return question
+
+        # Try to detect if they directly provided a value (e.g., a new location)
+        quick_field = self._guess_field_from_message(normalized)
+        if quick_field:
+            self.conversation_state = self.FIELD_STATE_MAP.get(quick_field, "collecting_full_name")
+            return await self._ask_for_field(quick_field)
+
+        return (
+            "Thanks. To update, tell me which field to change (e.g., 'update location'), "
+            "or say 'all good' to keep everything as-is."
+        )
+
+    def _guess_field_from_message(self, text: str) -> Optional[str]:
+        mapping = {
+            "name": "full_name",
+            "full name": "full_name",
+            "location": "location",
+            "age": "age",
+            "condition": "physical_condition",
+            "physical": "physical_condition",
+            "interests": "interests",
+            "interest": "interests",
+            "limitations": "limitations",
+            "limitation": "limitations",
+        }
+        for key, field in mapping.items():
+            if key in text:
+                return field
+        return None
+
+    async def _ask_for_field(self, field: str) -> str:
+        prompts = {
+            "full_name": "Got it — what is your full name?",
+            "location": "Thanks — what city and state are you currently located in?",
+            "age": "Thanks — how old are you?",
+            "physical_condition": "Thanks — could you describe your physical condition or anything we should keep in mind?",
+            "interests": "What kinds of activities or roles are you most interested in doing?",
+            "limitations": "Are there any limitations or things you prefer to avoid?",
+        }
+        response = prompts.get(field, "Please provide the updated value.")
+        self.last_question = response
+        self.last_question_type = field
+        return response
+
+    async def _choose_field_to_edit(self, message: str) -> str:
+        field = self._guess_field_from_message((message or "").lower())
+        if not field:
+            return (
+                "Please tell me which field to update: full name, location, age, "
+                "physical condition, interests, or limitations."
+            )
+        self.conversation_state = self.FIELD_STATE_MAP.get(field, "collecting_full_name")
+        return await self._ask_for_field(field)
     
     async def _handle_greeting(self) -> str:
         """Handle the initial greeting."""
         self.conversation_state = "collecting_full_name"
         
-        response = "Hello! I'm your Silver Star assistant. Could you please share your full name so we can get started?"
+        response = "Hello! I'm your Asteroid, Silver Star assistant. Could you please share your full name so we can get started?"
         self.last_question = response
         self.last_question_type = "full_name"
         return response
@@ -795,7 +913,7 @@ class CandidateChatbot:
             response = await llm_service.generate_response(
                 prompt,
                 temperature=0.2,
-                max_output_tokens=600,
+                max_output_tokens=600 * int(os.getenv("TOKENS_MULT")),
             )
 
             parsed = json.loads(strip_json_code_fences(response))

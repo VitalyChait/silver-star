@@ -1,6 +1,7 @@
 from typing import Optional
 
 from fastapi import Depends, HTTPException, status
+from fastapi import Header
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
@@ -33,3 +34,29 @@ def authenticate(db: Session, email: str, password: str):
     if not verify_password(password, user.hashed_password):
         return None
     return user
+
+
+def get_current_user_optional(
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    """Return the current user if a valid Bearer token is provided, otherwise None.
+
+    This avoids raising 401 when endpoints want to behave differently for
+    anonymous vs. authenticated callers.
+    """
+    if not authorization:
+        return None
+    try:
+        parts = authorization.split()
+        if len(parts) != 2 or parts[0].lower() != "bearer":
+            return None
+        token = parts[1]
+        payload = decode_access_token(token)
+        if not payload or "sub" not in payload:
+            return None
+        email = payload["sub"]
+        user = get_user_by_email(db, email)
+        return user
+    except Exception:
+        return None

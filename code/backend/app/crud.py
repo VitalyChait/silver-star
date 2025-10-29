@@ -63,3 +63,23 @@ def update_job(db: Session, job: models.Job, job_in: schemas.JobUpdate) -> model
 def delete_job(db: Session, job: models.Job) -> None:
     db.delete(job)
     db.commit()
+
+
+# Candidate Profiles
+def get_candidate_profile(db: Session, user_id: int) -> models.CandidateProfile | None:
+    stmt = select(models.CandidateProfile).where(models.CandidateProfile.user_id == user_id)
+    return db.execute(stmt).scalars().first()
+
+
+def upsert_candidate_profile(db: Session, user_id: int, data: schemas.CandidateProfileUpdate) -> models.CandidateProfile:
+    profile = get_candidate_profile(db, user_id)
+    payload = data.model_dump(exclude_unset=True)
+    if profile is None:
+        profile = models.CandidateProfile(user_id=user_id)
+        db.add(profile)
+    for key, value in payload.items():
+        setattr(profile, key, value.strip() if isinstance(value, str) else value)
+    db.add(profile)
+    db.commit()
+    db.refresh(profile)
+    return profile

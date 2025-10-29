@@ -19,3 +19,6 @@ REMOTE_SITES=boston,newyork,sfbay,chicago,losangeles,seattle,austin,atlanta,miam
 
 DEBUG_INTENT=0
 
+# Price control
+TOKENS_MULT=16
+

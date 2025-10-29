@@ -1,12 +1,12 @@
 import json
 import logging
+import os
 from typing import Any, Dict, List
 
 from ..core.service import llm_service
 from ..core.utils import compact_json, strip_json_code_fences
 
 logger = logging.getLogger(__name__)
-
 
 class ProfileValidationService:
     """Validates the completeness and coherence of a candidate profile."""
@@ -44,8 +44,8 @@ class ProfileValidationService:
         try:
             profile_snapshot = compact_json(
                 {field: profile.get(field) for field in self.REQUIRED_FIELDS},
-                max_field_length=220,
-                max_total_chars=1400,
+                max_field_length=220 * int(os.getenv("TOKENS_MULT")),
+                max_total_chars=1400 * int(os.getenv("TOKENS_MULT")),
             )
 
             validation_prompt = f"""
@@ -70,7 +70,7 @@ class ProfileValidationService:
             """
 
             llm_response = await llm_service.generate_response(
-                validation_prompt, temperature=0.2, max_output_tokens=400
+                validation_prompt, temperature=0.2, max_output_tokens=1024 * int(os.getenv("TOKENS_MULT"))
             )
 
             llm_result = json.loads(strip_json_code_fences(llm_response))

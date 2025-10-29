@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from ..deps import get_current_user
+from ..deps import get_current_user, get_current_user_optional
 from ..db import get_db
 
 # Add the llm module to the Python path
@@ -112,7 +112,8 @@ class FieldChangeJudgeResponse(BaseModel):
 @router.post("/chat", response_model=ChatResponse)
 async def chat_with_bot(
     message: ChatMessage,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user_optional),
 ):
     """
     Send a text message to the chatbot and get a response.
@@ -125,9 +126,28 @@ async def chat_with_bot(
         conversation_id = message.conversation_id or f"anon_{datetime.now().timestamp()}"
         
         if conversation_id not in chatbot_sessions:
-            chatbot_sessions[conversation_id] = CandidateChatbot()
+            chatbot_sessions[conversation_id] = CandidateChatbot(enable_audio=True)
         
         chatbot = chatbot_sessions[conversation_id]
+
+        # If a user is authenticated and has a saved profile, seed it once per session
+        try:
+            if current_user is not None and getattr(chatbot, "_seeded_from_profile", False) is not True:
+                from .. import crud
+                profile = crud.get_candidate_profile(db, current_user.id)
+                if profile:
+                    chatbot.seed_profile({
+                        "full_name": profile.full_name,
+                        "location": profile.location,
+                        "age": profile.age,
+                        "physical_condition": profile.physical_condition,
+                        "interests": profile.interests,
+                        "limitations": profile.limitations,
+                    })
+                    chatbot._seeded_from_profile = True  # mark to avoid re-seeding
+        except Exception:
+            # Non-fatal; continue without seeding
+            pass
         
         # Process the message with database session
         response, candidate_info = await chatbot.process_message(
@@ -162,7 +182,7 @@ async def voice_chat_with_bot(
         conversation_id = request.conversation_id or f"anon_{datetime.now().timestamp()}"
         
         if conversation_id not in chatbot_sessions:
-            chatbot_sessions[conversation_id] = CandidateChatbot()
+            chatbot_sessions[conversation_id] = CandidateChatbot(enable_audio=True)
         
         chatbot = chatbot_sessions[conversation_id]
         
@@ -205,7 +225,7 @@ async def update_profile_details(
             raise HTTPException(status_code=400, detail="conversation_id is required")
 
         if conversation_id not in chatbot_sessions:
-            chatbot_sessions[conversation_id] = CandidateChatbot()
+            chatbot_sessions[conversation_id] = CandidateChatbot(enable_audio=True)
 
         chatbot = chatbot_sessions[conversation_id]
 
@@ -236,7 +256,7 @@ async def judge_profile_change(request: FieldChangeJudgeRequest):
             raise HTTPException(status_code=400, detail="conversation_id is required")
 
         if conversation_id not in chatbot_sessions:
-            chatbot_sessions[conversation_id] = CandidateChatbot()
+            chatbot_sessions[conversation_id] = CandidateChatbot(enable_audio=True)
 
         chatbot = chatbot_sessions[conversation_id]
 

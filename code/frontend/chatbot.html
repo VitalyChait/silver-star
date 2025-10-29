@@ -819,6 +819,33 @@
                     userNameEl.textContent = currentUser.name || currentUser.email;
                 }
                 
+                // Try to load persisted candidate profile for this user
+                fetch(`${API_BASE_URL}/profile/details`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                })
+                .then(r => r.ok ? r.json() : {})
+                .then(data => {
+                    if (data && Object.keys(data).length > 0) {
+                        const info = {
+                            full_name: data.full_name || '',
+                            location: data.location || '',
+                            age: data.age || '',
+                            physical_condition: data.physical_condition || '',
+                            interests: data.interests || '',
+                            limitations: data.limitations || ''
+                        };
+                        candidateInfo = { ...candidateInfo, ...info };
+                        profileDraft = { ...profileDraft, ...info };
+                        renderProfile();
+                        if (saveProfileButton) {
+                            saveProfileButton.textContent = 'Update Profile';
+                        }
+                    }
+                })
+                .catch(() => {});
+
                 // Initialize chat with greeting
                 addBotMessage("Hello! I'm Asteroid, your SilverStar job assistant. I'll help you find the perfect job opportunity.");
                 addBotMessage("In the interface below, you can write or use voice to chat with me.");
@@ -937,17 +964,15 @@
                     return draftValue !== savedValue;
                 });
 
-                if (!conversationId) {
-                    profileSaveStatus.textContent = 'Start chatting to enable edits';
-                } else if (hasChanges) {
+                if (hasChanges) {
                     profileSaveStatus.textContent = 'Unsaved changes';
                 } else {
                     profileSaveStatus.textContent = candidateInfo.validation?.is_complete ? 'Profile complete' : 'Profile in progress';
                 }
 
-                profileSaveStatus.classList.toggle('text-amber-300', Boolean(conversationId && hasChanges));
-                profileSaveStatus.classList.toggle('text-gray-400', !(conversationId && hasChanges));
-                saveProfileButton.disabled = !conversationId || !hasChanges;
+                profileSaveStatus.classList.toggle('text-amber-300', Boolean(hasChanges));
+                profileSaveStatus.classList.toggle('text-gray-400', !hasChanges);
+                saveProfileButton.disabled = !hasChanges;
             }
 
             function renderProfile() {
@@ -1001,10 +1026,6 @@
 
             async function saveProfileUpdates() {
                 if (!saveProfileButton) return;
-                if (!conversationId) {
-                    addBotMessage('Let\'s start a quick introduction first so I can save these details.');
-                    return;
-                }
 
                 const payload = {};
                 profileFields.forEach(field => {
@@ -1014,17 +1035,16 @@
 
                 try {
                     saveProfileButton.disabled = true;
+                    const originalText = saveProfileButton.textContent;
                     saveProfileButton.textContent = 'Saving...';
-                    const response = await fetch(`${API_BASE_URL}/chatbot/profile/update`, {
-                        method: 'POST',
+                    // Save to persistent profile for the signed-in user
+                    const response = await fetch(`${API_BASE_URL}/profile/details`, {
+                        method: 'PUT',
                         headers: {
                             'Content-Type': 'application/json',
                             'Authorization': `Bearer ${token}`
                         },
-                        body: JSON.stringify({
-                            conversation_id: conversationId,
-                            updates: payload
-                        })
+                        body: JSON.stringify(payload)
                     });
 
                     if (!response.ok) {
@@ -1032,24 +1052,30 @@
                     }
 
                     const data = await response.json();
-                    if (data.candidate_info) {
-                        syncProfileFromBackend(data.candidate_info);
+                    const saved = {
+                        full_name: data.full_name || '',
+                        location: data.location || '',
+                        age: data.age || '',
+                        physical_condition: data.physical_condition || '',
+                        interests: data.interests || '',
+                        limitations: data.limitations || ''
+                    };
+                    candidateInfo = { ...candidateInfo, ...saved };
+                    profileDraft = { ...profileDraft, ...saved };
+                    renderProfile();
+                    if (saveProfileButton && originalText === 'Save Profile') {
+                        saveProfileButton.textContent = 'Update Profile';
                     }
-                    if (data.conversation_id) {
-                        conversationId = data.conversation_id;
-                    }
-                    if (data.message) {
-                        const filteredMessage = filterBotResponse(data.message);
-                        if (filteredMessage.html) {
-                            addBotMessage(filteredMessage.html, { isHtml: true });
-                        }
-                    }
+                    addBotMessage('Your profile has been saved.');
                 } catch (error) {
                     console.error('Error saving profile:', error);
                     addBotMessage('Sorry, I ran into an issue saving those changes. Please try again.');
                 } finally {
                     if (saveProfileButton) {
-                        saveProfileButton.textContent = 'Save Profile';
+                        // Keep "Update Profile" once a profile exists
+                        if (saveProfileButton.textContent === 'Saving...') {
+                            saveProfileButton.textContent = 'Update Profile';
+                        }
                     }
                     updateSaveStatus();
                 }

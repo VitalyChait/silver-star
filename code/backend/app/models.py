@@ -36,3 +36,22 @@ class Job(Base):
 
     owner_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"))
     owner: Mapped[Optional[User]] = relationship("User", back_populates="jobs")
+
+
+class CandidateProfile(Base):
+    __tablename__ = "candidate_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), unique=True, index=True)
+
+    full_name: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    location: Mapped[Optional[str]] = mapped_column(String(255), default=None)
+    age: Mapped[Optional[str]] = mapped_column(String(32), default=None)
+    physical_condition: Mapped[Optional[str]] = mapped_column(Text, default=None)
+    interests: Mapped[Optional[str]] = mapped_column(Text, default=None)
+    limitations: Mapped[Optional[str]] = mapped_column(Text, default=None)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped[User] = relationship("User")

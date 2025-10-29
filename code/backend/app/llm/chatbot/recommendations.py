@@ -1,6 +1,7 @@
 import json
 import logging
 import sys
+import os
 from typing import Dict, List, Any, Optional
 
 from sqlalchemy.orm import Session
@@ -146,7 +147,7 @@ class JobRecommendationService:
             response = await llm_service.generate_response(
                 prompt, 
                 temperature=0.3,  # Lower temperature for more consistent recommendations
-                max_output_tokens=900
+                max_output_tokens=900 * int(os.getenv("TOKENS_MULT"))
             )
             
             # Parse the JSON response

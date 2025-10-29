@@ -85,7 +85,7 @@ class LLMService:
         prompt: str,
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: float = 0.7,
-        max_output_tokens: int = 1024 * 4,
+        max_output_tokens: int = 1024 * int(os.getenv("TOKENS_MULT")),
     ) -> str:
         """
         Generate a response from the LLM.
