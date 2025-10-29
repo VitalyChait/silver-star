@@ -1245,7 +1245,7 @@ class CandidateChatbot:
             """
             summary = await llm_service.generate_response(summary_prompt)
 
-        message_parts = [summary.strip()]
+        message_parts = []
         if issues:
             issues_text = "Here are a few notes I noticed:\n" + "\n".join(f"- {issue}" for issue in issues)
             message_parts.append(issues_text)
@@ -1261,6 +1261,9 @@ class CandidateChatbot:
         else:
             self.candidate_info["executive_summary"] = None
             self.candidate_info["job_suggestions"] = None
+            # Only include the basic validation summary if we do not have an executive summary
+            if summary:
+                message_parts.insert(0, summary.strip())
 
         recommendations = await self._recommend_jobs()
         if recommendations:

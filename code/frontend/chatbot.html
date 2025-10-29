@@ -494,24 +494,8 @@
                     return { html: '', hasVisible: false, hiddenApplied: false };
                 }
 
-                const segments = content.split(/\n+/);
-                const sentenceCandidates = [];
-                segments.forEach(segment => {
-                    const trimmed = segment.trim();
-                    if (!trimmed) {
-                        return;
-                    }
-                    const sentences = trimmed.match(/[^.!?]+[.!?]?/g);
-                    if (sentences) {
-                        sentences.forEach(sentence => {
-                            if (sentence && sentence.trim()) {
-                                sentenceCandidates.push(sentence.trim());
-                            }
-                        });
-                    } else {
-                        sentenceCandidates.push(trimmed);
-                    }
-                });
+                // Preserve incoming line structure; operate per logical line instead of per-sentence
+                const sentenceCandidates = content.split(/\n+/).map(s => s.trim()).filter(Boolean);
 
                 const fragments = [];
                 let hasVisible = false;
@@ -558,7 +542,7 @@
                 }
 
                 return {
-                    html: fragments.join(' '),
+                    html: fragments.join('\n'),
                     hasVisible,
                     hiddenApplied
                 };
@@ -1258,6 +1242,20 @@
                 }
             }
 
+            function formatNumberedLists(text) {
+                if (!text || typeof text !== 'string') return text;
+                let out = text;
+                // Ensure headings are followed by a newline
+                out = out.replace(/(Suggested roles:)\s*/i, '$1\n');
+                out = out.replace(/(Next steps:)\s*/i, '$1\n');
+                // Insert a newline before any numbered list token like "1. ", "2. ", etc.,
+                // when it does not already start on a new line.
+                out = out.replace(/(^|[^\n])(\d+\.\s)/g, '$1\n$2');
+                // Remove accidental leading newlines
+                out = out.replace(/^\n+/, '');
+                return out;
+            }
+
             function renderResponseWithPreservedBlocks(rawText) {
                 const blocks = [];
                 const regex = /===BEGIN_RECS===([\s\S]*?)===END_RECS===/g;
@@ -1271,7 +1269,8 @@
                         const filtered = filterBotResponse(before);
                         if (filtered.html) addBotMessage(filtered.html, { isHtml: true });
                     }
-                    const preserved = match[1];
+                    let preserved = match[1];
+                    preserved = formatNumberedLists(prettifyExecutiveSummaryBlocks(preserved));
                     // Break large block into smaller chat messages by paragraph
                     const chunks = preserved.split(/\n\n+/).map(s => s.trim()).filter(Boolean);
                     chunks.forEach(chunk => addBotMessage(chunk));
@@ -1323,7 +1322,8 @@
                     if (/===BEGIN_RECS===/.test(improvedText)) {
                         renderResponseWithPreservedBlocks(improvedText);
                     } else {
-                        const filteredResponse = filterBotResponse(improvedText);
+                        const withLines = formatNumberedLists(improvedText);
+                        const filteredResponse = filterBotResponse(withLines);
                         if (filteredResponse.html) {
                             addBotMessage(filteredResponse.html, { isHtml: true });
                         }
