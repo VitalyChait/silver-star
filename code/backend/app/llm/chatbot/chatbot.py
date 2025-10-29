@@ -117,13 +117,14 @@ class CandidateChatbot:
                 return key
         return None
 
-    async def _auto_extract_all(self, message: str) -> None:
+    async def _auto_extract_all(self, message: str) -> set:
         """Attempt to extract any missing fields from a single user message.
 
         Only fills fields that are currently empty to avoid overwriting.
         """
+        filled: set = set()
         if not message:
-            return
+            return filled
         schema = {
             "full_name": "string",
             "location": "string",
@@ -147,29 +148,36 @@ class CandidateChatbot:
             name_inline = self._detect_full_name_from_message(message)
             if name_inline:
                 self.candidate_info["full_name"] = name_inline
+                filled.add("full_name")
         if not self.candidate_info.get("location"):
             loc_inline = self._detect_location_from_message(message)
             if loc_inline:
                 self.candidate_info["location"] = loc_inline
+                filled.add("location")
         if not self.candidate_info.get("physical_condition"):
             cond_inline = self._detect_physical_condition_from_message(message)
             if cond_inline:
                 self.candidate_info["physical_condition"] = cond_inline
+                filled.add("physical_condition")
         if not self.candidate_info.get("interests"):
             interests_inline = self._detect_interests_from_message(message)
             if interests_inline:
                 self.candidate_info["interests"] = interests_inline
+                filled.add("interests")
         if not self.candidate_info.get("limitations"):
             limits_inline = self._detect_limitations_from_message(message)
             if limits_inline:
                 self.candidate_info["limitations"] = limits_inline
+                filled.add("limitations")
 
         # LLM extraction fallback for anything still missing
         try:
             if not self.candidate_info.get("full_name") and data.get("full_name"):
                 self.candidate_info["full_name"] = str(data.get("full_name")).strip()
+                filled.add("full_name")
             if not self.candidate_info.get("location") and data.get("location"):
                 self.candidate_info["location"] = str(data.get("location")).strip()
+                filled.add("location")
             if not self.candidate_info.get("age") and data.get("age"):
                 # normalize age to number string
                 digits = re.findall(r"\d{1,3}", str(data.get("age")))
@@ -178,16 +186,21 @@ class CandidateChatbot:
                         age_int = int(digits[0])
                         if 10 <= age_int <= 120:
                             self.candidate_info["age"] = str(age_int)
+                            filled.add("age")
                     except ValueError:
                         pass
             if not self.candidate_info.get("physical_condition") and data.get("physical_condition"):
                 self.candidate_info["physical_condition"] = str(data.get("physical_condition")).strip()
+                filled.add("physical_condition")
             if not self.candidate_info.get("interests") and data.get("interests"):
                 self.candidate_info["interests"] = str(data.get("interests")).strip()
+                filled.add("interests")
             if not self.candidate_info.get("limitations") and data.get("limitations"):
                 self.candidate_info["limitations"] = self._normalize_limitations(str(data.get("limitations")).strip())
+                filled.add("limitations")
         except Exception:
             pass
+        return filled
 
     def _advance_state_if_filled(self):
         """Advance the conversation state past fields that are already filled."""
@@ -240,24 +253,29 @@ class CandidateChatbot:
 
     @staticmethod
     def _detect_location_from_message(message: str) -> Optional[str]:
-        """Lightweight detection of a location mentioned inline with other info."""
+        """Detect a likely location phrase without scooping other fields."""
         if not message:
             return None
-        patterns = [
-            r"(?:i(?:'m| am)?|i live|i reside|i work|i'm based|i am based|i'm located|i am located|based|located)\s+(?:in|at|near|around)\s+([A-Za-z0-9 ,'-]+)",
-            r"(?:from)\s+([A-Za-z0-9 ,'-]+)",
-            r"^(?:in\s+)?([A-Za-z0-9 ,'-]+)$",
-        ]
-        exclusion = re.compile(r"\b(health|condition|interests?|limitations?|remote|computer|drive|driving)\b", re.IGNORECASE)
-        for pattern in patterns:
-            m = re.search(pattern, message, re.IGNORECASE)
-            if m:
-                candidate = m.group(1).strip(" .,!")
-                if 2 <= len(candidate) <= 100:
-                    candidate = re.sub(r"\s+", " ", candidate)
-                    if exclusion.search(candidate):
-                        continue
-                    return candidate
+        sentences = re.split(r"[\.!?]+\s+", message)
+        leadins = re.compile(r"(?:\b(?:i(?:'m| am)?|i live|i reside|i work|i'm based|i am based|i'm located|i am located|based|located)\s+(?:in|at|near|around)\s+|\bfrom\s+)", re.IGNORECASE)
+        exclusion = re.compile(r"\b(health|condition|issues?|interests?|limitations?|remote|computer|drive|driving|teacher|wood|work\s+with\s+wood)\b", re.IGNORECASE)
+        for sent in sentences:
+            s = sent.strip()
+            if not s or exclusion.search(s):
+                continue
+            m = leadins.search(s)
+            if not m:
+                continue
+            candidate = s[m.end():]
+            candidate = re.split(r"[\.;!]\s*", candidate, maxsplit=1)[0]
+            candidate = candidate.strip(" ,.!?")
+            if not candidate or len(candidate) < 2 or len(candidate) > 80:
+                continue
+            if not re.search(r"[A-Za-z]", candidate):
+                continue
+            if re.search(r"\b(\d{2,4}\s*(years|yrs)\b|\bI\s+am\s+\d+\b)", candidate, re.IGNORECASE):
+                continue
+            return re.sub(r"\s+", " ", candidate)
         return None
 
     @staticmethod
@@ -558,7 +576,11 @@ class CandidateChatbot:
                 self.candidate_info["full_name"] = inline_name
 
         # Try to auto-fill any missing fields from this message
-        await self._auto_extract_all(message)
+        filled_now = await self._auto_extract_all(message)
+        # If we just filled what we were asking about, clear the pending question
+        if self.last_question_type and self.last_question_type in filled_now:
+            self.last_question = None
+            self.last_question_type = None
         # Advance state if the currently awaited field is already filled
         self._advance_state_if_filled()
 
