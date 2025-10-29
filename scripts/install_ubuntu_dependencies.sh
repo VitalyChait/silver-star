@@ -57,7 +57,7 @@ CORE_PKGS=(
 AUDIO_PKGS=(
   espeak-ng
   alsa-utils
-  libasound2
+  libasound2t64
   libasound2-data
   libsdl2-2.0-0
   libsdl2-mixer-2.0-0
