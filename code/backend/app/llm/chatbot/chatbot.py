@@ -3,6 +3,9 @@ import logging
 import os
 from typing import Dict, List, Optional, Tuple, Any
 import re
+import os
+import time
+from urllib.parse import urlencode
 
 from ..core.service import llm_service
 from ..core.utils import compact_json, strip_json_code_fences
@@ -110,6 +113,7 @@ class CandidateChatbot:
         self.enable_audio = enable_audio  # Whether to play audio responses
         self.retry_counts: Dict[str, int] = {}
         self._pending_correction: Optional[Dict[str, str]] = None
+        self._last_geo_lookup_ts: float = 0.0
 
     def _next_missing_field(self) -> Optional[str]:
         for key in self.FIELD_KEYS:
@@ -176,7 +180,9 @@ class CandidateChatbot:
                 self.candidate_info["full_name"] = str(data.get("full_name")).strip()
                 filled.add("full_name")
             if not self.candidate_info.get("location") and data.get("location"):
-                self.candidate_info["location"] = str(data.get("location")).strip()
+                raw_loc = str(data.get("location")).strip()
+                verified = self._validate_and_format_location(raw_loc)
+                self.candidate_info["location"] = verified or raw_loc
                 filled.add("location")
             if not self.candidate_info.get("age") and data.get("age"):
                 # normalize age to number string
@@ -277,6 +283,46 @@ class CandidateChatbot:
                 continue
             return re.sub(r"\s+", " ", candidate)
         return None
+
+    def _validate_and_format_location(self, candidate: str) -> Optional[str]:
+        """Optionally validate a free-text location using Nominatim and return a clean display string.
+
+        Controlled by env GEO_VALIDATE (default: on). Uses a short timeout and polite User-Agent.
+        """
+        if not candidate:
+            return None
+        # Basic clean-up
+        q = re.sub(r"\s+", " ", candidate).strip(" ,")
+        if not q or len(q) < 2:
+            return None
+        # Skip network if disabled
+        enabled = os.getenv("GEO_VALIDATE", "1") not in {"0", "false", "False"}
+        if not enabled:
+            return q
+        # Rate-limit a bit to be polite
+        now = time.time()
+        if now - getattr(self, "_last_geo_lookup_ts", 0) < 1.0:
+            return q
+        self._last_geo_lookup_ts = now
+        try:
+            import requests
+            params = {"q": q, "format": "json", "addressdetails": 1, "limit": 1}
+            url = f"https://nominatim.openstreetmap.org/search?{urlencode(params)}"
+            headers = {"User-Agent": "SilverStar-Asteroid/1.0 (contact: support@silverstar.local)"}
+            resp = requests.get(url, headers=headers, timeout=4)
+            if resp.ok:
+                data = resp.json()
+                if isinstance(data, list) and data:
+                    item = data[0]
+                    display = item.get("display_name") or q
+                    # Try to format as City, State, Country when possible
+                    addr = item.get("address") or {}
+                    parts = [addr.get("city") or addr.get("town") or addr.get("village") or addr.get("municipality"), addr.get("state"), addr.get("country")]
+                    compact = ", ".join([p for p in parts if p])
+                    return compact or display or q
+        except Exception:
+            return q
+        return q
 
     @staticmethod
     def _detect_physical_condition_from_message(message: str) -> Optional[str]:
@@ -592,7 +638,8 @@ class CandidateChatbot:
                 # Try to also detect location from the same message to avoid re-asking
                 inline_location = self._detect_location_from_message(message)
                 if inline_location:
-                    self.candidate_info["location"] = inline_location
+                    verified = self._validate_and_format_location(inline_location)
+                    self.candidate_info["location"] = verified or inline_location
                     self.conversation_state = "collecting_age"
                     preferred_name = self._preferred_name()
                     name_fragment = f", {preferred_name}" if preferred_name else ""
@@ -626,6 +673,27 @@ class CandidateChatbot:
             response = await self._handle_general_query(message)
         elif self.conversation_state == "validating_profile":
             response = await self._validate_profile()
+        elif self.conversation_state == "awaiting_recommendation_consent":
+            # Ask user if they want job positions generated now
+            normalized = (message or "").strip().lower()
+            yes = {"yes", "yep", "yeah", "sure", "please", "ok", "okay", "go ahead", "do it", "generate", "yes please"}
+            no = {"no", "nope", "nah", "not now", "later", "skip"}
+            if any(normalized.startswith(tok) for tok in yes):
+                self.conversation_state = "recommending_jobs"
+                response = await self._recommend_jobs()
+                # After sending recs, mark profile complete
+                self.conversation_state = "profile_complete"
+                self.last_question = None
+                self.last_question_type = None
+            elif any(normalized.startswith(tok) for tok in no):
+                response = "No problem — we can generate job matches whenever you're ready."
+                self.conversation_state = "profile_complete"
+                self.last_question = None
+                self.last_question_type = None
+            else:
+                response = "Would you like me to generate job positions now?"
+                self.last_question = response
+                self.last_question_type = "recommendations_consent"
         elif self.conversation_state == "recommending_jobs":
             response = await self._recommend_jobs()
         else:
@@ -686,7 +754,7 @@ class CandidateChatbot:
                 self.conversation_history
             )
         except Exception as exc:  # pylint: disable=broad-except
-            logger.error("LLM judge failed: %s", exc)
+            logger.error("[chatbot.py] LLM judge failed: %s", exc)
             return {"should_replace": False, "confidence": 0.0, "reason": "judge_error"}
 
         raw_should = decision.get("should_replace")
@@ -704,7 +772,7 @@ class CandidateChatbot:
 
         reason = decision.get("reason") or "no_reason_provided"
         logger.info(
-            "Field change judge result | field=%s | should_replace=%s | confidence=%.2f | reason=%s | proposed=%s",
+            "[chatbot.py] Field change judge result | field=%s | should_replace=%s | confidence=%.2f | reason=%s | proposed=%s",
             field,
             should_replace,
             confidence_value,
@@ -730,7 +798,7 @@ class CandidateChatbot:
         try:
             await audio_player.play_text(response)
         except Exception as e:
-            logger.error(f"Error playing audio response: {str(e)}")
+            logger.error(f"[chatbot.py] Error playing audio response: {str(e)}")
 
     def _profile_summary_snippet(self) -> str:
         parts = []
@@ -917,7 +985,7 @@ class CandidateChatbot:
             self.last_question_type = "full_name"
             return response
         except Exception as e:
-            logger.error(f"Error extracting full name: {str(e)}")
+            logger.error(f"[chatbot.py] Error extracting full name: {str(e)}")
             response = "I'm having trouble understanding. Could you please tell me your full name?"
             self.last_question = response
             self.last_question_type = "full_name"
@@ -979,7 +1047,8 @@ class CandidateChatbot:
                     location = extracted["location"].strip(" .,!")
             
             if location:
-                self.candidate_info["location"] = location
+                verified = self._validate_and_format_location(location)
+                self.candidate_info["location"] = verified or location
                 # Try to capture age from the same message to avoid re-asking
                 inline_age = _extract_age_inline(message)
                 if inline_age:
@@ -1012,7 +1081,7 @@ class CandidateChatbot:
                 self.last_question_type = "location"
                 return response
         except Exception as e:
-            logger.error(f"Error extracting location: {str(e)}")
+            logger.error(f"[chatbot.py] Error extracting location: {str(e)}")
             
             response = "I'm having trouble understanding. Could you please tell me your location?"
             self.last_question = response
@@ -1056,7 +1125,7 @@ class CandidateChatbot:
 
                 age_value = normalize_age(extracted.get("age") if extracted else None)
             except Exception as e:
-                logger.error(f"Error extracting age: {str(e)}")
+                logger.error(f"[chatbot.py] Error extracting age: {str(e)}")
 
         if age_value:
             self.candidate_info["age"] = age_value
@@ -1131,7 +1200,7 @@ class CandidateChatbot:
             self.last_question_type = "physical_condition"
             return response
         except Exception as e:
-            logger.error(f"Error extracting physical condition: {str(e)}")
+            logger.error(f"[chatbot.py] Error extracting physical condition: {str(e)}")
 
             response = "I'm having trouble understanding. Could you tell me a bit about your physical condition?"
             self.last_question = response
@@ -1177,7 +1246,7 @@ class CandidateChatbot:
             self.last_question_type = "interests"
             return response
         except Exception as e:
-            logger.error(f"Error extracting interests: {str(e)}")
+            logger.error(f"[chatbot.py] Error extracting interests: {str(e)}")
 
             response = "I'm having trouble understanding. Could you share the kinds of things you would like to do?"
             self.last_question = response
@@ -1219,7 +1288,7 @@ class CandidateChatbot:
             self.conversation_state = "validating_profile"
             return await self._validate_profile()
         except Exception as e:
-            logger.error(f"Error extracting limitations: {str(e)}")
+            logger.error(f"[chatbot.py] Error extracting limitations: {str(e)}")
 
             response = "I'm having trouble understanding. Could you share any limitations we should be aware of? If there are none, feel free to say so."
             self.last_question = response
@@ -1287,16 +1356,13 @@ class CandidateChatbot:
             if summary:
                 message_parts.insert(0, summary.strip())
 
-        recommendations = await self._recommend_jobs()
-        if recommendations:
-            message_parts.append(recommendations)
-        message_parts.append(
-            "I've saved these details. If anything looks off, please edit it directly in the profile panel or let me know."
-        )
+        # Ask for consent before generating job positions
+        consent_question = "Would you like me to generate job positions now?"
+        message_parts.append(consent_question)
 
-        self.conversation_state = "profile_complete"
-        self.last_question = None
-        self.last_question_type = None
+        self.conversation_state = "awaiting_recommendation_consent"
+        self.last_question = consent_question
+        self.last_question_type = "recommendations_consent"
 
         return "\n\n".join(part for part in message_parts if part)
 
@@ -1360,7 +1426,7 @@ class CandidateChatbot:
 
             return parsed
         except Exception as exc:  # pylint: disable=broad-except
-            logger.error("Error generating executive summary: %s", exc)
+            logger.error("[chatbot.py] Error generating executive summary: %s", exc)
             return None
     
     async def _recommend_jobs(self) -> str:
@@ -1425,7 +1491,7 @@ class CandidateChatbot:
                 # Wrap fallback block so UI preserves newlines nicely
                 return "\n===BEGIN_RECS===\n" + text + "\n===END_RECS===\n"
         except Exception as e:
-            logger.error(f"Error generating job recommendations: {str(e)}")
+            logger.error(f"[chatbot.py] Error generating job recommendations: {str(e)}")
             
             # Fallback to a generic response
             return "I'm having trouble finding specific job recommendations right now. Based on your profile, I'd suggest looking for positions that match your skills and availability. Would you like me to provide some general job search advice instead?"

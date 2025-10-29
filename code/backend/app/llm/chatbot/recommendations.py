@@ -70,7 +70,7 @@ class JobRecommendationService:
             
             return recommendations
         except Exception as e:
-            logger.error(f"Error generating job recommendations: {str(e)}")
+            logger.error(f"[recommendations.py] Error generating job recommendations: {str(e)}")
             return []
     
     async def _generate_recommendations_with_llm(
@@ -155,17 +155,17 @@ class JobRecommendationService:
             
             # Ensure we have a list
             if not isinstance(recommendations, list):
-                logger.error("LLM response is not a list")
+                logger.error("[recommendations.py] LLM response is not a list")
                 return []
             
             # Limit the number of recommendations
             return recommendations[:limit]
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse LLM response as JSON: {str(e)}")
-            logger.error(f"LLM response: {response}")
+            logger.error(f"[recommendations.py] Failed to parse LLM response as JSON: {str(e)}")
+            logger.error(f"[recommendations.py] LLM response: {response}")
             return []
         except Exception as e:
-            logger.error(f"Error generating recommendations with LLM: {str(e)}")
+            logger.error(f"[recommendations.py] Error generating recommendations with LLM: {str(e)}")
             return []
     
     async def get_job_details_for_recommendation(
@@ -199,7 +199,7 @@ class JobRecommendationService:
                 "created_at": job.created_at.isoformat() if job.created_at else None
             }
         except Exception as e:
-            logger.error(f"Error getting job details: {str(e)}")
+            logger.error(f"[recommendations.py] Error getting job details: {str(e)}")
             return None
 
 

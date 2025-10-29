@@ -133,16 +133,16 @@ async def scrape_usajobs_background(
                     
                     crud.create_job(db, owner_id=None, job_in=job_create)
                     added_count += 1
-                    logger.info(f"Added job: {formatted_job['title']} at {formatted_job['company']}")
+                    logger.info(f"[job_scraper.py] Added job: {formatted_job['title']} at {formatted_job['company']}")
             except Exception as e:
-                logger.error(f"Error processing job: {str(e)}")
+                logger.error(f"[job_scraper.py] Error processing job: {str(e)}")
                 continue
         
         db.close()
-        logger.info(f"Scraping completed. Added {added_count} new jobs out of {len(jobs)} found.")
+        logger.info(f"[job_scraper.py] Scraping completed. Added {added_count} new jobs out of {len(jobs)} found.")
         
     except Exception as e:
-        logger.error(f"Error in background scraping task: {str(e)}")
+        logger.error(f"[job_scraper.py] Error in background scraping task: {str(e)}")
 
 
 @router.get("/scraping-status", response_model=Dict[str, Any])

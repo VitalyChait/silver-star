@@ -96,7 +96,7 @@ class AnswerValidator:
             
             # Ensure all required fields are present
             if not all(key in result for key in ["is_valid", "extracted_value", "confidence", "needs_clarification", "reason"]):
-                logger.warning(f"Validation response missing required fields: {response}")
+                logger.warning(f"[validation.py] Validation response missing required fields: {response}")
                 return {
                     "is_valid": False,
                     "extracted_value": None,
@@ -107,7 +107,7 @@ class AnswerValidator:
             
             return result
         except Exception as e:
-            logger.error(f"Error validating answer: {str(e)}")
+            logger.error(f"[validation.py] ErrorError validating answer: {str(e)}")
             return {
                 "is_valid": False,
                 "extracted_value": None,

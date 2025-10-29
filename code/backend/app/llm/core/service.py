@@ -48,9 +48,9 @@ class LLMService:
                 safety_settings=safety_settings,
             )
 
-            logger.info("Initialized Gemini model: %s", os.getenv("GEMINI_MODEL"))
+            logger.info("[service.py] Initialized Gemini model: %s", os.getenv("GEMINI_MODEL"))
         except Exception as exc:  # pylint: disable=broad-except
-            logger.error("Failed to initialize Gemini: %s", exc)
+            logger.error("[service.py] Failed to initialize Gemini: %s", exc)
             raise
 
     def _initialize_openai(self) -> None:
@@ -60,11 +60,11 @@ class LLMService:
         base_url = os.getenv("LLM_BASE_URL")
 
         if not api_key or not model:
-            logger.info("OpenAI fallback not configured (missing LLM_API_KEY or LLM_MODEL).")
+            logger.info("[service.py] OpenAI fallback not configured (missing LLM_API_KEY or LLM_MODEL).")
             return
 
         if OpenAI is None:
-            logger.warning("OpenAI package is not installed; fallback will be disabled.")
+            logger.warning("[service.py] OpenAI package is not installed; fallback will be disabled.")
             return
 
         kwargs = {"api_key": api_key}
@@ -74,7 +74,7 @@ class LLMService:
         try:
             self.openai_client = OpenAI(**kwargs)  # type: ignore
             self.openai_model = model
-            logger.info("Initialized OpenAI fallback model: %s", model)
+            logger.info("[service.py] Initialized OpenAI fallback model: %s", model)
         except Exception as exc:  # pylint: disable=broad-except
             self.openai_client = None
             self.openai_model = None
@@ -108,11 +108,11 @@ class LLMService:
             )
             if text:
                 if attempt > 0:
-                    logger.info("Gemini succeeded on retry %d.", attempt)
+                    logger.info("[service.py] Gemini succeeded on retry %d.", attempt)
                 return text
-            logger.debug("Gemini attempt %d returned no content.", attempt + 1)
+            logger.debug("[service.py] Gemini attempt %d returned no content.", attempt + 1)
 
-        logger.warning("Gemini failed after 2 attempts; evaluating OpenAI fallback.")
+        logger.warning("[service.py] Gemini failed after 2 attempts; evaluating OpenAI fallback.")
         fallback = await self._generate_with_openai(
             prompt,
             conversation_history=conversation_history,
@@ -120,10 +120,10 @@ class LLMService:
             max_output_tokens=max_output_tokens,
         )
         if fallback:
-            logger.info("Response served via OpenAI fallback.")
+            logger.info("[service.py] Response served via OpenAI fallback.")
             return fallback
 
-        logger.error("All LLM backends failed to generate a response.")
+        logger.error("[service.py] All LLM backends failed to generate a response.")
         return self.GENERIC_ERROR_MESSAGE
 
     async def _generate_with_gemini(
@@ -136,7 +136,7 @@ class LLMService:
     ) -> Optional[str]:
         """Attempt to generate a response using Gemini, returning None on failure."""
         if not self.model:
-            logger.error("Gemini model is not initialized.")
+            logger.error("[service.py] Gemini model is not initialized.")
             return None
 
         try:
@@ -168,7 +168,7 @@ class LLMService:
                 )
 
             if not response.candidates:
-                logger.error("Gemini returned no candidates. prompt=%r", prompt[:200])
+                logger.error("[service.py] Gemini returned no candidates. prompt=%r", prompt[:200])
                 return None
 
             candidate = next(
@@ -186,7 +186,7 @@ class LLMService:
 
             if finish_reason_name == "SAFETY":
                 logger.warning(
-                    "Response was filtered for safety reasons. prompt=%r", prompt[:200]
+                    "[service.py] Response was filtered for safety reasons. prompt=%r", prompt[:200]
                 )
                 return "I apologize, but I cannot provide a response to that request due to safety guidelines."
 
@@ -195,7 +195,7 @@ class LLMService:
                 if conversation_history:
                     history_chars = sum(len(entry.get("content", "")) for entry in conversation_history)
                 logger.warning(
-                    "Gemini hit token limit. prompt_chars=%d history_chars=%d max_output_tokens=%s",
+                    "[service.py] Gemini hit token limit. prompt_chars=%d history_chars=%d max_output_tokens=%s",
                     len(prompt),
                     history_chars,
                     max_output_tokens,
@@ -218,19 +218,19 @@ class LLMService:
                     return generated_text
             except Exception as text_error:  # pylint: disable=broad-except
                 logger.error(
-                    "Gemini response.text accessor failed: %s. finish_reason=%s",
+                    "[service.py] Gemini response.text accessor failed: %s. finish_reason=%s",
                     text_error,
                     finish_reason_name,
                 )
 
             logger.error(
-                "Gemini returned no textual content. finish_reason=%s prompt_preview=%r",
+                "[service.py] Gemini returned no textual content. finish_reason=%s prompt_preview=%r",
                 finish_reason_name,
                 prompt[:200],
             )
             return None
         except Exception as exc:  # pylint: disable=broad-except
-            logger.exception("Unexpected Gemini error for prompt %r: %s", prompt[:200], exc)
+            logger.exception("[service.py] Unexpected Gemini error for prompt %r: %s", prompt[:200], exc)
             return None
 
     async def _generate_with_openai(
@@ -272,7 +272,7 @@ class LLMService:
             if text:
                 return text.strip()
         except Exception as exc:  # pylint: disable=broad-except
-            logger.error("OpenAI fallback failed: %s", exc)
+            logger.error("[service.py] OpenAI fallback failed: %s", exc)
         return None
     
     async def extract_structured_data(
@@ -314,7 +314,7 @@ class LLMService:
             cleaned = strip_json_code_fences(response)
             return json.loads(cleaned)
         except json.JSONDecodeError:
-            logger.error(f"Failed to parse JSON response: {response}")
+            logger.error(f"[service.py] Failed to parse JSON response: {response}")
             # Return empty structure with the same schema
             return {key: None for key in schema.keys()}
 

@@ -74,9 +74,12 @@ run_chatbot_sanity_check() {
 mkdir -p "$LOG_DIR"
 BACKEND_LOG_FILE="$LOG_DIR/backend.log"
 FRONTEND_LOG_FILE="$LOG_DIR/frontend.log"
+LLM_LOG_DIR="$LOG_DIR/llm"
+
+mkdir -p "$LLM_LOG_DIR"
 
 # Always start with fresh logs for this run
-rm -f "$BACKEND_LOG_FILE" "$FRONTEND_LOG_FILE"
+rm -rf "$BACKEND_LOG_FILE" "$FRONTEND_LOG_FILE" "$LLM_LOG_DIR/*
 
 bash "$SCRIPT_DIR/stop.sh"
 

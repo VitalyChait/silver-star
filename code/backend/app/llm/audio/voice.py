@@ -40,7 +40,7 @@ class VoiceService:
     def _init_speech_client(self):
         """Initialize the Google Cloud Speech-to-Text client."""
         if not GOOGLE_CLOUD_AVAILABLE:
-            logger.warning("Google Cloud Speech libraries not available")
+            logger.warning("[voice.py] Google Cloud Speech libraries not available")
             self.speech_client = None
             return
             
@@ -48,15 +48,15 @@ class VoiceService:
             # In a real implementation, you would use Google Cloud credentials
             # For now, we'll create a placeholder
             self.speech_client = None
-            logger.info("Speech-to-Text client initialized")
+            logger.info("[voice.py] Speech-to-Text client initialized")
         except Exception as e:
-            logger.error(f"Failed to initialize Speech-to-Text client: {str(e)}")
+            logger.error(f"[voice.py] Failed to initialize Speech-to-Text client: {str(e)}")
             self.speech_client = None
     
     def _init_tts_client(self):
         """Initialize the Google Cloud Text-to-Speech client."""
         if not GOOGLE_CLOUD_AVAILABLE:
-            logger.warning("Google Cloud Speech libraries not available")
+            logger.warning("[voice.py] Google Cloud Speech libraries not available")
             self.tts_client = None
             return
             
@@ -64,9 +64,9 @@ class VoiceService:
             # In a real implementation, you would use Google Cloud credentials
             # For now, we'll create a placeholder
             self.tts_client = None
-            logger.info("Text-to-Speech client initialized")
+            logger.info("[voice.py] Text-to-Speech client initialized")
         except Exception as e:
-            logger.error(f"Failed to initialize Text-to-Speech client: {str(e)}")
+            logger.error(f"[voice.py] Failed to initialize Text-to-Speech client: {str(e)}")
     
     def _init_fallback_tts(self):
         """Initialize the fallback text-to-speech engine."""
@@ -74,18 +74,18 @@ class VoiceService:
             try:
                 self.fallback_tts_engine = pyttsx3.init()
                 self.tts_engine_type = "pyttsx3"
-                logger.info("Fallback TTS engine (pyttsx3) initialized")
+                logger.info("[voice.py] Fallback TTS engine (pyttsx3) initialized")
                 return
             except Exception as e:
-                logger.error(f"Failed to initialize pyttsx3 TTS engine: {str(e)}")
+                logger.error(f"[voice.py] Failed to initialize pyttsx3 TTS engine: {str(e)}")
         
         if GTTS_AVAILABLE:
             self.fallback_tts_engine = None  # gTTS doesn't need initialization
             self.tts_engine_type = "gtts"
-            logger.info("Fallback TTS engine (gTTS) initialized")
+            logger.info("[voice.py] Fallback TTS engine (gTTS) initialized")
             return
         
-        logger.warning("No TTS engine available (neither pyttsx3 nor gTTS)")
+        logger.warning("[voice.py] No TTS engine available (neither pyttsx3 nor gTTS)")
         self.fallback_tts_engine = None
         self.tts_engine_type = None
     
@@ -108,13 +108,13 @@ class VoiceService:
                 # Create a prompt for Gemini to transcribe the audio
                 # Note: This is a workaround since we can't directly process audio with Gemini
                 # In a production environment, you would use a proper speech-to-text API
-                logger.warning("Using fallback transcription method")
+                logger.warning("[voice.py] Using fallback transcription method")
                 
                 # Return a message indicating we couldn't process the audio
                 # This is better than returning a placeholder that gets displayed in the chat
                 return "I couldn't process your audio message. Please try using text input instead."
             except Exception as e:
-                logger.error(f"Error in fallback speech-to-text: {str(e)}")
+                logger.error(f"[voice.py] Error in fallback speech-to-text: {str(e)}")
                 return "I couldn't process your audio message. Please try using text input instead."
         
         try:
@@ -142,7 +142,7 @@ class VoiceService:
             else:
                 return ""
         except Exception as e:
-            logger.error(f"Error in speech-to-text conversion: {str(e)}")
+            logger.error(f"[voice.py] Error in speech-to-text conversion: {str(e)}")
             return "I couldn't process your audio message. Please try using text input instead."
     
     async def text_to_speech(
@@ -189,7 +189,7 @@ class VoiceService:
                 audio_base64 = base64.b64encode(response.audio_content).decode("utf-8")
                 return audio_base64
             except Exception as e:
-                logger.error(f"Error in Google Cloud text-to-speech conversion: {str(e)}")
+                logger.error(f"[voice.py] Error in Google Cloud text-to-speech conversion: {str(e)}")
                 # Fall back to local TTS if Google Cloud fails
         
         # Fallback to local TTS if available
@@ -220,10 +220,10 @@ class VoiceService:
                 # Return the base64 encoded audio
                 return base64.b64encode(audio_data).decode("utf-8")
             except Exception as e:
-                logger.error(f"Error in fallback text-to-speech conversion: {str(e)}")
+                logger.error(f"[voice.py] Error in fallback text-to-speech conversion: {str(e)}")
         
         # If all else fails, return a placeholder
-        logger.warning("No text-to-speech engine available, returning placeholder")
+        logger.warning("[voice.py] No text-to-speech engine available, returning placeholder")
         return ""
 
 

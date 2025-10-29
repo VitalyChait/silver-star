@@ -18,6 +18,8 @@ CL_SITE_DEFAULT=boston
 REMOTE_SITES=boston,newyork,sfbay,chicago,losangeles,seattle,austin,atlanta,miami,dallas,denver,sandiego,portland
 
 DEBUG_INTENT=0
+LLM_LOGS_ENABLED=1
+GEO_VALIDATE=1
 
 # Price control
 TOKENS_MULT=16

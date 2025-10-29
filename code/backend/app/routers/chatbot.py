@@ -163,7 +163,7 @@ async def chat_with_bot(
             conversation_id=conversation_id
         )
     except Exception as e:
-        logger.exception("Error in chat endpoint: %s", e)
+        logger.exception("[chatbot.py] Error in chat endpoint: %s", e)
         raise HTTPException(status_code=500, detail="Failed to process chat message")
 
 
@@ -209,7 +209,7 @@ async def voice_chat_with_bot(
             conversation_id=conversation_id
         )
     except Exception as e:
-        logger.error(f"Error in voice chat endpoint: {str(e)}")
+        logger.error(f"[chatbot.py] Error in voice chat endpoint: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to process voice message")
 
 
@@ -242,7 +242,7 @@ async def update_profile_details(
     except HTTPException:
         raise
     except Exception as e:  # pylint: disable=broad-except
-        logger.error(f"Error updating profile: {str(e)}")
+        logger.error(f"[chatbot.py] Error updating profile: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to update profile information")
 
 
@@ -277,7 +277,7 @@ async def judge_profile_change(request: FieldChangeJudgeRequest):
     except HTTPException:
         raise
     except Exception as exc:  # pylint: disable=broad-except
-        logger.error("Error judging profile change: %s", exc)
+        logger.error("[chatbot.py] Error judging profile change: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to evaluate profile change")
 
 
@@ -299,5 +299,5 @@ async def reset_chatbot(
         
         return {"message": "Chatbot conversation reset successfully"}
     except Exception as e:
-        logger.error(f"Error resetting chatbot: {str(e)}")
+        logger.error(f"[chatbot.py] Error resetting chatbot: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to reset chatbot")

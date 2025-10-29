@@ -92,7 +92,7 @@ class ProfileValidationService:
                 result["is_complete"] = bool(llm_result.get("is_complete", True))
 
         except Exception as exc:  # pylint: disable=broad-except
-            logger.error("Profile validation fallback due to error: %s", exc)
+            logger.error("[profile_validator.py] Profile validation fallback due to error: %s", exc)
             # Fall back to heuristic completeness check
             result["is_complete"] = len(result["missing_fields"]) == 0
             if not result["summary"]:
