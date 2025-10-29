@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SilverStar - Experience Meets Opportunity</title>
     <!-- Tailwind CSS CDN --><script src="https://cdn.tailwindcss.com"></script>
+    <!-- Startup environment config -->
+    <script src="/env.js"></script>
     <!-- Google Fonts - Inter --><link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
@@ -270,7 +272,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             // --- Authentication State ---
             let currentUser = null;
-            const API_BASE_URL = 'http://localhost:${PYTHON_APP_PORT}/api';
+            const API_BASE_URL = 'http://localhost:' + (window.__ENV__ && window.__ENV__.PYTHON_APP_PORT) + '/api';
             
             // Check if user is already logged in (from localStorage)
             const token = localStorage.getItem('silverstar_token');
@@ -508,7 +510,7 @@
                 // Remove after 3 seconds
                 setTimeout(() => {
                     notification.remove();
-                }, ${NODE_APP_PORT});
+                }, 3000);
             }
 
             // --- "Job Now" Flow Logic ---
@@ -692,5 +694,3 @@
 
 </body>
 </html>
-
-

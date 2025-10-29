@@ -87,6 +87,19 @@ source "$ENV_FILE"
 set +a
 print_success "Environment variables loaded"
 
+# Generate a frontend env.js with frozen values so the static server can serve it
+print_status "Writing frontend env.js with startup env values..."
+FRONTEND_DIR_ENV="$REPO_DIR/code/frontend/env.js"
+rm -f "$FRONTEND_DIR_ENV"
+cat > "$FRONTEND_DIR_ENV" <<EOF
+// Generated at runtime by scripts/run.sh
+window.__ENV__ = Object.freeze({
+  NODE_APP_PORT: ${NODE_APP_PORT:-3000},
+  PYTHON_APP_PORT: ${PYTHON_APP_PORT:-8000}
+});
+EOF
+print_success "Wrote $FRONTEND_DIR_ENV"
+
 # Start the backend server
 print_status "Starting backend server..."
 cd "$REPO_DIR/code/backend"

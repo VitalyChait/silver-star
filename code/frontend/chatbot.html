@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SilverStar - Job Search Assistant</title>
     <!-- Tailwind CSS CDN --><script src="https://cdn.tailwindcss.com"></script>
+    <!-- Startup environment config -->
+    <script src="/env.js"></script>
     <!-- Google Fonts - Inter --><link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
@@ -305,7 +307,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             // --- Authentication State ---
             let currentUser = null;
-            const API_BASE_URL = 'http://localhost:${PYTHON_APP_PORT}/api';
+            const API_BASE_URL = 'http://localhost:' + (window.__ENV__ && window.__ENV__.PYTHON_APP_PORT) + '/api';
             let conversationId = null;
             let isRecording = false;
             let speechRecognition = null;
@@ -791,12 +793,30 @@
                 }
             }
             
+            // Helper to show a friendly prompt instead of redirecting
+            function showAuthRequired() {
+                const container = document.querySelector('.relative.min-h-screen');
+                const notice = document.createElement('div');
+                notice.className = 'mx-auto mt-24 mb-4 max-w-3xl bg-yellow-500/10 border border-yellow-500/40 text-yellow-100 rounded-lg p-4 text-sm';
+                notice.innerHTML = 'You are not signed in. Some features are disabled. Please <a href="silverstar.html" class="underline">go to the home page</a> to sign in.';
+                document.body.insertBefore(notice, document.body.firstChild);
+
+                const messageInputEl = document.getElementById('message-input');
+                const sendButtonEl = document.getElementById('send-button');
+                const voiceButtonEl = document.getElementById('voice-button');
+                if (messageInputEl) {
+                    messageInputEl.disabled = true;
+                    messageInputEl.placeholder = 'Sign in on the home page to chat';
+                }
+                if (sendButtonEl) sendButtonEl.disabled = true;
+                if (voiceButtonEl) voiceButtonEl.disabled = true;
+            }
+
             // Check if user is logged in
             const token = localStorage.getItem('silverstar_token');
             if (!token) {
-                // Redirect to home if not logged in
-                window.location.href = 'silverstar.html';
-                return;
+                // Do not redirect; show prompt and keep page
+                showAuthRequired();
             }
             
             // Get user profile
@@ -854,7 +874,8 @@
             .catch(error => {
                 console.error('Token validation error:', error);
                 localStorage.removeItem('silverstar_token');
-                window.location.href = 'silverstar.html';
+                // Do not redirect; show prompt and keep page
+                showAuthRequired();
             });
             
             // --- Custom Cursor Logic ---
