@@ -461,7 +461,8 @@
                     /\bcould you (?:please )?(?:share|tell me)\s+(?:your\s+)?name\b/i
                 ],
                 location: [
-                    /\bwhere (?:are|r)\s+you\s+(?:located|based|living|from)\b/i,
+                    // allow optional adverbs between "you" and the keyword (e.g., "currently")
+                    /\bwhere (?:are|r)\s+you(?:\s+\w+){0,3}\s+(?:located|based|living|from)\b/i,
                     /\bwhat(?:'s| is)\s+your\s+location\b/i,
                     /\bcould you (?:please )?(?:share|tell me)\s+(?:your\s+)?location\b/i
                 ],
@@ -471,16 +472,19 @@
                     /\bcould you (?:please )?(?:share|tell me)\s+(?:your\s+)?age\b/i
                 ],
                 physical_condition: [
-                    /\bdescribe\s+(?:your\s+)?physical\s+condition\b/i,
-                    /\bany\s+physical\s+limitations\b/i
+                    /\bdescribe\s+(?:your\s+)?(?:current\s+)?physical\s+condition\b/i,
+                    /\bany\s+physical\s+limitations\b/i,
+                    /\bhow\s+is\s+(?:your\s+)?health\b/i
                 ],
                 interests: [
                     /\bwhat\s+are\s+your\s+interests\b/i,
-                    /\bwhat\s+do\s+you\s+enjoy\b/i
+                    /\bwhat\s+do\s+you\s+enjoy\b/i,
+                    /\bwhat\s+roles?\s+are\s+you\s+(?:most\s+)?interested\s+in\b/i
                 ],
                 limitations: [
                     /\bdo\s+you\s+have\s+any\s+limitations\b/i,
-                    /\bwhat\s+limitations\s+do\s+you\s+have\b/i
+                    /\bwhat\s+limitations\s+do\s+you\s+have\b/i,
+                    /\banything\s+you\s+prefer\s+to\s+avoid\b/i
                 ]
             };
 
@@ -704,6 +708,58 @@
                     const ageNum = parseInt(ageMatch[1], 10);
                     if (!Number.isNaN(ageNum) && ageNum >= 14 && ageNum <= 100) {
                         updates.push({ field: 'age', value: `${ageNum}` });
+                    }
+                }
+
+                // Physical condition quick extraction
+                const physPatterns = [
+                    /\bphysical\s+condition\s*(?:is|:)?\s*([^.!?]{2,100})/i,
+                    /\b(?:health|health\s+problems|medical\s+issues)\s*(?:is|are|:)?\s*([^.!?]{2,100})/i,
+                    /\b(?:in|with)\s+(?:excellent|good|fair|poor)\s+(?:health|shape|condition)\b/i,
+                    /\bno\s+health\s+problems?\b/i
+                ];
+                for (const pattern of physPatterns) {
+                    const m = workingMessage.match(pattern);
+                    if (m) {
+                        let val = m[1] ? finalizeCapturedValue(m[1]) : m[0];
+                        if (val && val.length <= 120) {
+                            updates.push({ field: 'physical_condition', value: val });
+                            break;
+                        }
+                    }
+                }
+
+                // Interests quick extraction
+                const interestsPatterns = [
+                    /\b(?:i\s+would\s+like\s+to\s+be|i\s+want\s+to\s+be|i'm\s+interested\s+in|i\s+am\s+interested\s+in|i\s+like\s+to\s+work\s+as|my\s+interests\s+are)\s+([^.!?]{2,120})/i
+                ];
+                for (const pattern of interestsPatterns) {
+                    const m = workingMessage.match(pattern);
+                    if (m && m[1]) {
+                        const val = finalizeCapturedValue(m[1]);
+                        if (val) {
+                            updates.push({ field: 'interests', value: val });
+                            break;
+                        }
+                    }
+                }
+
+                // Limitations quick extraction
+                const limitationsPatterns = [
+                    /\b(?:not|no)\s+remote\b/i,
+                    /\bprefer\s+(?:no|not)\s+remote\b/i,
+                    /\b(?:cannot|can't|do\s+not\s+want\s+to)\s+lift\s+\d+/i,
+                    /\b(?:prefer\s+to\s+avoid|avoid)\s+([^.!?]{2,120})/i
+                ];
+                for (const pattern of limitationsPatterns) {
+                    const m = workingMessage.match(pattern);
+                    if (m) {
+                        let val = m[1] ? finalizeCapturedValue(m[1]) : m[0];
+                        val = val.replace(/\b(?:prefer\s+to\s+avoid|avoid)\b\s*/i, '').trim();
+                        if (val) {
+                            updates.push({ field: 'limitations', value: val });
+                            break;
+                        }
                     }
                 }
 
@@ -1124,13 +1180,14 @@
             if (resetProfileButton) {
                 resetProfileButton.addEventListener('click', (event) => {
                     event.preventDefault();
+                    // Clear the form fields to empty values (true form reset)
                     profileDraft = {
-                        full_name: candidateInfo.full_name || '',
-                        location: candidateInfo.location || '',
-                        age: candidateInfo.age || '',
-                        physical_condition: candidateInfo.physical_condition || '',
-                        interests: candidateInfo.interests || '',
-                        limitations: candidateInfo.limitations || ''
+                        full_name: '',
+                        location: '',
+                        age: '',
+                        physical_condition: '',
+                        interests: '',
+                        limitations: ''
                     };
                     renderProfile();
                 });

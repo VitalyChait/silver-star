@@ -131,6 +131,44 @@ class CandidateChatbot:
             if parts:
                 return parts[0]
         return None
+
+    @staticmethod
+    def _detect_location_from_message(message: str) -> Optional[str]:
+        """Lightweight detection of a location mentioned inline with other info."""
+        if not message:
+            return None
+        patterns = [
+            r"(?:i(?:'m| am)?|i live|i reside|i work|i'm based|i am based|i'm located|i am located|based|located)\s+(?:in|at|near|around)\s+([A-Za-z0-9 ,'-]+)",
+            r"(?:from)\s+([A-Za-z0-9 ,'-]+)",
+            r"^(?:in\s+)?([A-Za-z0-9 ,'-]+)$",
+        ]
+        for pattern in patterns:
+            m = re.search(pattern, message, re.IGNORECASE)
+            if m:
+                candidate = m.group(1).strip(" .,!")
+                if 2 <= len(candidate) <= 100:
+                    return re.sub(r"\s+", " ", candidate)
+        return None
+
+    @staticmethod
+    def _detect_physical_condition_from_message(message: str) -> Optional[str]:
+        """Heuristically detect a physical condition summary from a message."""
+        if not message:
+            return None
+        phys_patterns = [
+            r"\bphysical\s+condition\s*(?:is|:)?\s*([^.!?]{2,120})",
+            r"\b(?:health|health\s+problems|medical\s+issues)\s*(?:is|are|:)?\s*([^.!?]{2,120})",
+            r"\b(?:in|with)\s+(?:excellent|good|fair|poor)\s+(?:health|shape|condition)\b",
+            r"\bno\s+health\s+problems?\b",
+        ]
+        for pattern in phys_patterns:
+            m = re.search(pattern, message, re.IGNORECASE)
+            if m:
+                value = m.group(1) if m.lastindex else m.group(0)
+                value = re.sub(r"\s+", " ", value).strip(" .,!")
+                if value:
+                    return value
+        return None
     
     def _conversation_snippet(self, turns: int = 6) -> str:
         """Return the last few conversation turns formatted for prompts."""
@@ -273,10 +311,21 @@ class CandidateChatbot:
             detected_name = self._detect_full_name_from_message(message)
             if detected_name:
                 self.candidate_info["full_name"] = detected_name
-                self.conversation_state = "collecting_location"
-                response = f"Nice to meet you, {detected_name}! Where are you currently located?"
-                self.last_question = response
-                self.last_question_type = "location"
+                # Try to also detect location from the same message to avoid re-asking
+                inline_location = self._detect_location_from_message(message)
+                if inline_location:
+                    self.candidate_info["location"] = inline_location
+                    self.conversation_state = "collecting_age"
+                    preferred_name = self._preferred_name()
+                    name_fragment = f", {preferred_name}" if preferred_name else ""
+                    response = f"Thanks{name_fragment}! To make sure opportunities are appropriate, could you share your age?"
+                    self.last_question = response
+                    self.last_question_type = "age"
+                else:
+                    self.conversation_state = "collecting_location"
+                    response = f"Nice to meet you, {detected_name}! Where are you currently located?"
+                    self.last_question = response
+                    self.last_question_type = "location"
             else:
                 response = await self._handle_greeting()
         elif self.conversation_state == "confirming_profile":
@@ -527,6 +576,17 @@ class CandidateChatbot:
 
         if extracted_name:
             self.candidate_info["full_name"] = extracted_name
+            # Try to capture location from the same message to skip redundant prompt
+            inline_location = self._detect_location_from_message(message)
+            if inline_location:
+                self.candidate_info["location"] = inline_location
+                self.conversation_state = "collecting_age"
+                preferred_name = self._preferred_name()
+                name_fragment = f", {preferred_name}" if preferred_name else ""
+                response = f"Thanks{name_fragment}! To make sure opportunities are appropriate, could you share your age?"
+                self.last_question = response
+                self.last_question_type = "age"
+                return response
             self.conversation_state = "collecting_location"
             response = f"Nice to meet you, {extracted_name}! Where are you currently located?"
             self.last_question = response
@@ -673,6 +733,16 @@ class CandidateChatbot:
 
         if age_value:
             self.candidate_info["age"] = age_value
+            # Try to detect physical condition if provided in the same message
+            inline_condition = self._detect_physical_condition_from_message(message)
+            if inline_condition:
+                self.candidate_info["physical_condition"] = inline_condition
+                self.conversation_state = "collecting_interests"
+                response = "Thanks for sharing. What kinds of activities or roles are you most interested in doing?"
+                self.last_question = response
+                self.last_question_type = "interests"
+                return response
+
             self.conversation_state = "collecting_physical_condition"
 
             response = "Thank you. Could you describe your current physical condition or anything I should keep in mind?"
