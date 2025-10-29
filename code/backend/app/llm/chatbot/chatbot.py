@@ -169,6 +169,70 @@ class CandidateChatbot:
                 if value:
                     return value
         return None
+
+    @staticmethod
+    def _detect_interests_from_message(message: str) -> Optional[str]:
+        """Detect interests from free text (e.g., "I'd like to be a teacher")."""
+        if not message:
+            return None
+        patterns = [
+            r"\b(?:i\s+would\s+like\s+to\s+be|i\s+want\s+to\s+be|i['\s]m\s+interested\s+in|i\s+am\s+interested\s+in|i\s+like\s+to\s+work\s+as|my\s+interests\s+are)\s+([^.!?]{2,120})",
+            r"^\s*(teacher|tutor|driver|cashier|nurse|caregiver|coordinator)\s*$",
+        ]
+        for pat in patterns:
+            m = re.search(pat, message, re.IGNORECASE)
+            if m:
+                val = (m.group(1) if m.lastindex else m.group(0)).strip(" .,!")
+                return re.sub(r"\s+", " ", val)
+        return None
+
+    @staticmethod
+    def _normalize_limitations(value: str) -> str:
+        """Normalize common limitation phrasings to avoid inversions (e.g., remote)."""
+        if not value:
+            return value
+        text = value.lower()
+        # Remote work negatives
+        remote_negative = any(
+            phrase in text
+            for phrase in [
+                "not remote",
+                "no remote",
+                "don't want to work remotely",
+                "do not want to work remotely",
+                "no remote work",
+                "prefer in-person",
+                "in person only",
+                "on-site only",
+                "onsite only",
+                "not work remotely",
+                "avoid remote",
+            ]
+        )
+        if remote_negative:
+            return "prefers non-remote (in-person); no remote work"
+        return value
+
+    @staticmethod
+    def _detect_limitations_from_message(message: str) -> Optional[str]:
+        """Detect limitations, with special handling for remote preference negatives."""
+        if not message:
+            return None
+        patterns = [
+            r"\b(?:not|no)\s+remote\b",
+            r"\bprefer\s+(?:no|not)\s+remote\b",
+            r"\b(?:in\s*person|on-?site|onsite)\s+only\b",
+            r"\b(?:do\s+not|don't)\s+want\s+to\s+work\s+remotely\b",
+            r"\b(?:cannot|can't|do\s+not\s+want\s+to)\s+lift\s+\d+\s*(?:lbs|pounds)?\b",
+            r"\bprefer\s+to\s+avoid\s+([^.!?]{2,120})",
+        ]
+        for pat in patterns:
+            m = re.search(pat, message, re.IGNORECASE)
+            if m:
+                val = (m.group(1) if m.lastindex else m.group(0)).strip(" .,!")
+                norm = CandidateChatbot._normalize_limitations(val)
+                return norm
+        return None
     
     def _conversation_snippet(self, turns: int = 6) -> str:
         """Return the last few conversation turns formatted for prompts."""
@@ -793,8 +857,17 @@ class CandidateChatbot:
 
             if condition:
                 self.candidate_info["physical_condition"] = condition.strip()
-                self.conversation_state = "collecting_interests"
+                # Also attempt to capture interests from the same message to avoid re-asking
+                inline_interests = self._detect_interests_from_message(message)
+                if inline_interests:
+                    self.candidate_info["interests"] = inline_interests
+                    self.conversation_state = "collecting_limitations"
+                    response = "That's helpful. Are there any limitations or things you prefer to avoid so we can plan around them?"
+                    self.last_question = response
+                    self.last_question_type = "limitations"
+                    return response
 
+                self.conversation_state = "collecting_interests"
                 response = "Thanks for sharing. What kinds of activities or roles are you most interested in doing?"
                 self.last_question = response
                 self.last_question_type = "interests"
@@ -833,8 +906,14 @@ class CandidateChatbot:
 
             if interests:
                 self.candidate_info["interests"] = interests.strip()
-                self.conversation_state = "collecting_limitations"
+                # Try to parse limitations from the same message
+                inline_limits = self._detect_limitations_from_message(message)
+                if inline_limits:
+                    self.candidate_info["limitations"] = inline_limits
+                    self.conversation_state = "validating_profile"
+                    return await self._validate_profile()
 
+                self.conversation_state = "collecting_limitations"
                 response = "That's helpful. Are there any limitations or things you prefer to avoid so we can plan around them?"
                 self.last_question = response
                 self.last_question_type = "limitations"
@@ -872,7 +951,7 @@ class CandidateChatbot:
                 limitations = extracted.get("limitations") if extracted else None
 
             if limitations:
-                self.candidate_info["limitations"] = limitations.strip()
+                self.candidate_info["limitations"] = self._normalize_limitations(limitations.strip())
             else:
                 self.candidate_info["limitations"] = None
 
@@ -994,6 +1073,8 @@ class CandidateChatbot:
         - suggested_roles should contain between 2 and 4 entries tailored to the profile.
         - next_steps must contain at least one actionable suggestion.
         - Keep language plain and free from markdown.
+        - Strictly honor explicit constraints in "limitations". If the candidate says they do not want remote work,
+          reflect that as a non-remote preference and DO NOT invert it into a remote preference.
         """
 
         try:
@@ -1065,6 +1146,10 @@ class CandidateChatbot:
                 2. Company name
                 3. Location
                 4. Brief description of why it's a good fit
+                
+                Important constraints:
+                - Respect the candidate's "limitations" strictly. If they state they do NOT want remote work, only suggest non-remote (in-person) roles.
+                - Do not contradict the profile; never invert negative preferences into positives.
                 
                 Format your response in a friendly, conversational way.
                 """

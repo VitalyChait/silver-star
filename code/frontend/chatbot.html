@@ -469,7 +469,8 @@
                 age: [
                     /\bhow\s+old\s+are\s+you\b/i,
                     /\bwhat(?:'s| is)\s+your\s+age\b/i,
-                    /\bcould you (?:please )?(?:share|tell me)\s+(?:your\s+)?age\b/i
+                    /\bcould you (?:please )?(?:share|tell me)\s+(?:your\s+)?age\b/i,
+                    /\b(?:date\s+of\s+birth|dob)\b/i
                 ],
                 physical_condition: [
                     /\bdescribe\s+(?:your\s+)?(?:current\s+)?physical\s+condition\b/i,
@@ -936,6 +937,14 @@
                 addBotMessage("Hello! I'm Asteroid, your SilverStar job assistant. I'll help you find the perfect job opportunity.");
                 addBotMessage("In the interface below, you can write or use voice to chat with me.");
                 addBotMessage("You can chat with me about your job search, your skills, your experience, your location, your salary expectations, your job preferences, etc.");
+                // If we already know the user's name, greet them personally
+                try {
+                    const knownName = (candidateInfo.full_name && candidateInfo.full_name.trim()) || (currentUser && currentUser.name);
+                    if (knownName) {
+                        const firstName = String(knownName).trim().split(/\s+/)[0];
+                        addBotMessage(`Nice to meet you, ${firstName}!`);
+                    }
+                } catch (_) {}
             })
             .catch(error => {
                 console.error('Token validation error:', error);
