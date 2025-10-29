@@ -795,12 +795,9 @@
             
             // Helper to show a friendly prompt instead of redirecting
             function showAuthRequired() {
-                const container = document.querySelector('.relative.min-h-screen');
-                const notice = document.createElement('div');
-                notice.className = 'mx-auto mt-24 mb-4 max-w-3xl bg-yellow-500/10 border border-yellow-500/40 text-yellow-100 rounded-lg p-4 text-sm';
-                notice.innerHTML = 'You are not signed in. Some features are disabled. Please <a href="silverstar.html" class="underline">go to the home page</a> to sign in.';
-                document.body.insertBefore(notice, document.body.firstChild);
+                if (document.getElementById('auth-required-banner')) return; // prevent duplicates
 
+                // Disable chat inputs
                 const messageInputEl = document.getElementById('message-input');
                 const sendButtonEl = document.getElementById('send-button');
                 const voiceButtonEl = document.getElementById('voice-button');
@@ -810,17 +807,30 @@
                 }
                 if (sendButtonEl) sendButtonEl.disabled = true;
                 if (voiceButtonEl) voiceButtonEl.disabled = true;
+
+                // Full-page centered notice
+                const overlay = document.createElement('div');
+                overlay.id = 'auth-required-banner';
+                overlay.className = 'fixed inset-0 flex items-center justify-center z-50 p-6';
+                overlay.innerHTML = `
+                  <div class="text-center bg-gray-900/80 border border-gray-700 rounded-2xl p-8 max-w-xl shadow-2xl">
+                    <img src="public/assets/logo.png" alt="SilverStar" class="mx-auto mb-6 w-28 h-28 object-contain opacity-90" />
+                    <h2 class="text-2xl md:text-3xl font-bold text-gray-100 mb-3">You are not signed in</h2>
+                    <p class="text-gray-300 mb-6">Some features are disabled. Please sign in to continue.</p>
+                    <a href="silverstar.html" class="inline-block bg-gray-200 text-gray-900 px-6 py-3 rounded-lg font-medium hover:bg-white transition">Go to Home to Sign In</a>
+                  </div>
+                `;
+                document.body.appendChild(overlay);
             }
 
             // Check if user is logged in
             const token = localStorage.getItem('silverstar_token');
             if (!token) {
-                // Do not redirect; show prompt and keep page
                 showAuthRequired();
             }
             
             // Get user profile
-            fetch(`${API_BASE_URL}/profile`, {
+            if (token) fetch(`${API_BASE_URL}/profile`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }

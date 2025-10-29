@@ -498,19 +498,13 @@
             
             // Show notification
             function showNotification(message, type) {
-                // Create notification element
                 const notification = document.createElement('div');
-                notification.className = `fixed top-20 right-6 p-4 rounded-lg shadow-lg z-50 ${
+                notification.className = `fixed top-8 left-1/2 -translate-x-1/2 p-4 rounded-lg shadow-lg z-50 ${
                     type === 'success' ? 'bg-green-600' : 'bg-red-600'
-                } text-white`;
+                } text-white text-center`;
                 notification.textContent = message;
-                
                 document.body.appendChild(notification);
-                
-                // Remove after 3 seconds
-                setTimeout(() => {
-                    notification.remove();
-                }, 3000);
+                setTimeout(() => notification.remove(), 3000);
             }
 
             // --- "Job Now" Flow Logic ---
