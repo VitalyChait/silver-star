@@ -12,32 +12,40 @@ FastAPI backend server for the SilverStar job application platform.
 
 ## Setup
 
-1. Install dependencies:
+1. Install dependencies (uv):
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
 
-2. Configure LLM API keys:
+Optional: install extras for scrapers
 ```bash
-cp app/llm/.llm_config.example app/llm/.llm_config
-# Edit app/llm/.llm_config with your API keys
+# Craigslist tooling
+uv sync --extra craigslist
+# USAJOBS tooling
+uv sync --extra usajobs
+```
+
+2. Configure environment variables:
+```bash
+cp ../env_example ../.env
+# Edit ../.env with your API keys and provider settings
 ```
 
 3. Initialize the database with sample jobs:
 ```bash
-python populate_jobs.py
+uv run python populate_jobs.py
 ```
 
 ## Running the Server
 
 Start the server using the provided script:
 ```bash
-python start_server.py
+uv run python start_server.py
 ```
 
 Or run directly with uvicorn:
 ```bash
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 ## API Endpoints

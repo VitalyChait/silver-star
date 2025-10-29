@@ -45,7 +45,7 @@ class Intent(BaseModel):
     availability_hours_per_week: Optional[int] = None
     notes: Optional[str] = None
 
-DEBUG = os.getenv("DEBUG_INTENT", "0") == "1"
+DEBUG = True if os.getenv("DEBUG_INTENT") == "1" else False
 log = logging.getLogger("intent")
 if DEBUG:
     logging.basicConfig(level=logging.INFO)
@@ -230,13 +230,13 @@ class IntentCollectorTool(_CrewBaseTool):
 
     def _run_impl(self, user_responses: str) -> str:
         user_text = user_responses or ""
-        model_name = os.getenv("LLM_MODEL", "gpt-4o-mini")
-        api_key = os.getenv("OPENAI_API_KEY")
+        model_name = os.getenv("LLM_MODEL")
+        api_key = os.getenv("LLM_API_KEY")
 
         # 1) Try LLM, but fall back safely on *any* error and ALWAYS return JSON
         try:
             from openai import OpenAI
-            client = OpenAI(api_key=api_key)
+            client = OpenAI(api_key=api_key, base_url=os.getenv("LLM_BASE_URL"))
             msgs = build_messages(user_text)
             resp = client.chat.completions.create(
                 model=model_name,

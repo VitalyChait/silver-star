@@ -75,3 +75,25 @@ class JobPublic(JobBase):
 
     class Config:
         from_attributes = True
+
+
+# Candidate Profile
+class CandidateProfileBase(BaseModel):
+    full_name: Optional[str] = None
+    location: Optional[str] = None
+    age: Optional[str] = None
+    physical_condition: Optional[str] = None
+    interests: Optional[str] = None
+    limitations: Optional[str] = None
+
+
+class CandidateProfileUpdate(CandidateProfileBase):
+    pass
+
+
+class CandidateProfilePublic(CandidateProfileBase):
+    id: int
+    user_id: int
+
+    class Config:
+        from_attributes = True

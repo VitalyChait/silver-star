@@ -36,6 +36,27 @@ def get_profile(current_user: models.User = Depends(get_current_user)):
     return current_user
 
 
+@router.get("/profile/details", response_model=schemas.CandidateProfilePublic | dict)
+def get_profile_details(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    profile = crud.get_candidate_profile(db, current_user.id)
+    if not profile:
+        return {}
+    return profile
+
+
+@router.put("/profile/details", response_model=schemas.CandidateProfilePublic)
+def update_profile_details(
+    payload: schemas.CandidateProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    profile = crud.upsert_candidate_profile(db, current_user.id, payload)
+    return profile
+
+
 @router.post("/token", response_model=schemas.Token)
 def login_for_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = authenticate(db, form_data.username, form_data.password)

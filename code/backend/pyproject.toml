@@ -1,0 +1,54 @@
+[project]
+name = "silverstar-backend"
+version = "0.1.0"
+description = "SilverStar backend (FastAPI + LLM)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    # Core dependencies
+    "fastapi==0.115.0",
+    "uvicorn[standard]==0.30.6",
+    "SQLAlchemy==2.0.36",
+    "pydantic==2.9.2",
+    "pydantic-settings==2.6.1",
+    "python-multipart==0.0.9",
+    "passlib[bcrypt]==1.7.4",
+    "python-jose==3.3.0",
+    "email-validator==2.2.0",
+
+    # LLM dependencies
+    "google-generativeai==0.8.3",
+    "google-cloud-speech==2.26.1",
+    "google-cloud-texttospeech==2.16.3",
+
+    # Audio functionality dependencies
+    "pygame>=2.1.0",
+    "pyttsx3>=2.90",
+    "gTTS>=2.5.0",
+]
+
+[project.optional-dependencies]
+# Optional extras for scrapers
+craigslist = [
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.30.0",
+    "pydantic>=2.7.0",
+    "requests>=2.31.0",
+    "crewai==0.51.1",
+    "scrapingbee==2.0.2",
+    "openai>=1.50.0",
+]
+usajobs = [
+    "requests>=2.25.0",
+]
+
+[dependency-groups]
+dev = []
+
+[tool.uv.sources]
+
+[tool.uv.workspace]
+members = []
+
+[tool.uv.pip]
+generate-hashes = false

@@ -1,18 +1,20 @@
 import json
 import logging
 import sys
+import os
 from typing import Dict, List, Any, Optional
 
 from sqlalchemy.orm import Session
 
-# Import the server modules directly since we're now in the same app
+# Import the main app modules directly
 try:
-    from ... import crud, models
+    from app import crud, models
 except ImportError as e:
     print(f"Error importing server modules: {e}", file=sys.stderr)
     sys.exit(1)
 
 from ..core.service import llm_service
+from ..core.utils import compact_json, compact_jobs, strip_json_code_fences
 
 logger = logging.getLogger(__name__)
 
@@ -89,8 +91,25 @@ class JobRecommendationService:
             List of job recommendations with match scores
         """
         # Create a prompt for the LLM
-        candidate_summary = json.dumps(candidate_info, indent=2)
-        jobs_summary = json.dumps(jobs, indent=2)
+        relevant_profile = {
+            "full_name": candidate_info.get("full_name"),
+            "location": candidate_info.get("location"),
+            "age": candidate_info.get("age"),
+            "physical_condition": candidate_info.get("physical_condition"),
+            "interests": candidate_info.get("interests"),
+            "limitations": candidate_info.get("limitations"),
+        }
+        candidate_summary = compact_json(
+            relevant_profile,
+            max_field_length=220,
+            max_total_chars=1400,
+        )
+        jobs_summary = compact_jobs(
+            jobs,
+            max_jobs=25,
+            max_field_length=220,
+            max_total_chars=6500,
+        )
         
         prompt = f"""
         You are an expert job recruiter. Based on the following candidate information, 
@@ -102,7 +121,7 @@ class JobRecommendationService:
         Available Jobs:
         {jobs_summary}
         
-        Please analyze the candidate's skills, location, what they're looking for, and availability
+        Please analyze the candidate's location, interests, physical considerations, and limitations
         to determine which jobs would be the best match.
         
         Return your response as a JSON array of job recommendations. Each recommendation should include:
@@ -128,11 +147,11 @@ class JobRecommendationService:
             response = await llm_service.generate_response(
                 prompt, 
                 temperature=0.3,  # Lower temperature for more consistent recommendations
-                max_output_tokens=2048
+                max_output_tokens=900 * int(os.getenv("TOKENS_MULT"))
             )
             
             # Parse the JSON response
-            recommendations = json.loads(response)
+            recommendations = json.loads(strip_json_code_fences(response))
             
             # Ensure we have a list
             if not isinstance(recommendations, list):

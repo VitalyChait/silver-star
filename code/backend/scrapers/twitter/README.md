@@ -40,11 +40,14 @@ Python 3.7+
 
 Google Chrome browser installed on your system.
 
-1. Install Required Packages
+1. Install Required Packages (uv)
 
-The project relies on selenium for browser automation and webdriver-manager to automatically handle the Chrome driver. Install these packages using pip:
+The project relies on selenium for browser automation and webdriver-manager to automatically handle the Chrome driver. Install these packages using uv:
 
-pip install selenium webdriver-manager
+```bash
+cd code/backend
+uv add selenium webdriver-manager
+```
 
 
 2. Create Credentials File
@@ -65,14 +68,18 @@ Running the Main Script (Demonstration)
 
 To run the example demonstration in twitter_utils.py, which logs in, queries Grok, and scrapes the feed, execute the following command from your terminal:
 
-python twitter_utils.py
+```bash
+uv run python twitter_utils.py
+```
 
 
 Running the Unit Tests
 
 To verify that the TwitterScraper class is functioning correctly according to its tests, run the test_twitter_utils.py file:
 
-python test_twitter_utils.py
+```bash
+uv run python test_twitter_utils.py
+```
 
 
 You should see an output indicating that all tests passed successfully.

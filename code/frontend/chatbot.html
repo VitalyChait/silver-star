@@ -75,6 +75,7 @@
             border-radius: 18px;
             margin-bottom: 16px;
             line-height: 1.4;
+            white-space: pre-wrap;
         }
 
         .user-message {
@@ -113,6 +114,14 @@
 
         .typing-indicator span:nth-child(3) {
             animation-delay: 0.4s;
+        }
+
+        .hidden-bot-prompt {
+            display: none;
+        }
+
+        .bot-fallback {
+            display: inline;
         }
 
         @keyframes typing {
@@ -208,7 +217,7 @@
 
         <!-- Header --><header class="absolute top-0 left-0 right-0 p-6 flex justify-between items-center z-20">
             <div class="flex items-center">
-                <h1 class="ml-3 text-xl font-bold text-gray-100">SilverStar Assistant</h1>
+                <h1 class="ml-3 text-xl font-bold text-gray-100">SilverStar Asteroid Assistant Bot</h1>
             </div>
             <nav class="flex items-center gap-4">
                 <span id="user-name" class="text-gray-300"></span>
@@ -217,35 +226,76 @@
             </nav>
         </header>
 
-        <!-- Chat Section --><section class="flex-1 flex flex-col p-6 max-w-4xl w-full mx-auto">
-            <div id="chat-container" class="chat-container flex flex-col">
-                <!-- Messages will be added here dynamically -->
-            </div>
-            
-            <!-- Input Area --><div class="mt-4 flex items-center gap-3">
-                <input 
-                    type="text" 
-                    id="message-input" 
-                    placeholder="Type your message here..." 
-                    class="flex-1 p-3 rounded-lg bg-gray-800 border border-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-gray-400"
-                >
-                <button 
-                    id="voice-button" 
-                    class="voice-button interactive-target p-3 rounded-full bg-gray-700 text-gray-300 hover:bg-gray-600 transition-all duration-200"
-                    title="Hold to record voice message"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                    </svg>
-                </button>
-                <button 
-                    id="send-button" 
-                    class="interactive-target p-3 rounded-full bg-gray-200 text-gray-900 hover:bg-white transition-all duration-200"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                    </svg>
-                </button>
+        <!-- Chat Section --><section class="flex-1 w-full p-6 max-w-6xl mx-auto">
+            <div class="flex flex-col lg:flex-row gap-6 w-full">
+                <div class="flex-1 flex flex-col">
+                    <div id="chat-container" class="chat-container flex flex-col">
+                        <!-- Messages will be added here dynamically -->
+                    </div>
+                    
+                    <!-- Input Area --><div class="mt-4 flex items-center gap-3">
+                        <input 
+                            type="text" 
+                            id="message-input" 
+                            placeholder="Asteroid" 
+                            class="flex-1 p-3 rounded-lg bg-gray-800 border border-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-gray-400"
+                        >
+                        <button 
+                            id="voice-button" 
+                            class="voice-button interactive-target p-3 rounded-full bg-gray-700 text-gray-300 hover:bg-gray-600 transition-all duration-200"
+                            title="Hold to record voice message"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                            </svg>
+                        </button>
+                        <button 
+                            id="send-button" 
+                            class="interactive-target p-3 rounded-full bg-gray-200 text-gray-900 hover:bg-white transition-all duration-200"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <aside id="profile-panel" class="w-full lg:w-80 bg-gray-900/70 border border-gray-700/60 rounded-2xl p-4 shadow-lg shadow-black/40 backdrop-blur-sm">
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-lg font-semibold text-gray-100">Profile Overview</h2>
+                        <span id="profile-save-status" class="text-xs text-gray-400 uppercase tracking-wide">Profile in progress</span>
+                    </div>
+                    <form id="profile-form" class="mt-4 space-y-3">
+                        <div>
+                            <label for="profile-full-name" class="block text-sm font-medium text-gray-300 mb-1">Full Name</label>
+                            <input id="profile-full-name" data-field="full_name" type="text" class="w-full p-2 rounded-lg bg-gray-800 border border-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-gray-400">
+                        </div>
+                        <div>
+                            <label for="profile-location" class="block text-sm font-medium text-gray-300 mb-1">Location</label>
+                            <input id="profile-location" data-field="location" type="text" class="w-full p-2 rounded-lg bg-gray-800 border border-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-gray-400">
+                        </div>
+                        <div>
+                            <label for="profile-age" class="block text-sm font-medium text-gray-300 mb-1">Age</label>
+                            <input id="profile-age" data-field="age" type="text" inputmode="numeric" class="w-full p-2 rounded-lg bg-gray-800 border border-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-gray-400">
+                        </div>
+                        <div>
+                            <label for="profile-physical-condition" class="block text-sm font-medium text-gray-300 mb-1">Physical Condition</label>
+                            <textarea id="profile-physical-condition" data-field="physical_condition" rows="2" class="w-full p-2 rounded-lg bg-gray-800 border border-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-gray-400 resize-none"></textarea>
+                        </div>
+                        <div>
+                            <label for="profile-interests" class="block text-sm font-medium text-gray-300 mb-1">Areas of Interest</label>
+                            <textarea id="profile-interests" data-field="interests" rows="2" class="w-full p-2 rounded-lg bg-gray-800 border border-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-gray-400 resize-none"></textarea>
+                        </div>
+                        <div>
+                            <label for="profile-limitations" class="block text-sm font-medium text-gray-300 mb-1">Limitations</label>
+                            <textarea id="profile-limitations" data-field="limitations" rows="2" class="w-full p-2 rounded-lg bg-gray-800 border border-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-gray-400 resize-none"></textarea>
+                        </div>
+                    </form>
+                    <div class="flex items-center gap-3 mt-4">
+                        <button id="save-profile-button" class="flex-1 interactive-target bg-gray-200 text-gray-900 px-3 py-2 rounded-lg font-medium hover:bg-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed">Save Profile</button>
+                        <button id="reset-profile-button" class="interactive-target px-3 py-2 rounded-lg border border-gray-600 text-gray-300 hover:border-gray-400 hover:text-white transition-all duration-200" type="button">Reset</button>
+                    </div>
+                    <div id="profile-feedback" class="mt-4 text-sm text-gray-300 whitespace-pre-line bg-gray-800/70 border border-gray-700 rounded-lg p-3 min-h-[96px]">Profile details will appear here as we gather them.</div>
+                </aside>
             </div>
         </section>
 
@@ -258,8 +308,488 @@
             const API_BASE_URL = 'http://localhost:8000/api';
             let conversationId = null;
             let isRecording = false;
-            let mediaRecorder = null;
-            let audioChunks = [];
+            let speechRecognition = null;
+            let speechRecognitionSupported = false;
+            let speechSegments = [];
+            const profileFields = ['full_name', 'location', 'age', 'physical_condition', 'interests', 'limitations'];
+            const profileInputs = {
+                full_name: document.getElementById('profile-full-name'),
+                location: document.getElementById('profile-location'),
+                age: document.getElementById('profile-age'),
+                physical_condition: document.getElementById('profile-physical-condition'),
+                interests: document.getElementById('profile-interests'),
+                limitations: document.getElementById('profile-limitations')
+            };
+            const saveProfileButton = document.getElementById('save-profile-button');
+            const resetProfileButton = document.getElementById('reset-profile-button');
+            const profileFeedback = document.getElementById('profile-feedback');
+            const profileSaveStatus = document.getElementById('profile-save-status');
+            let candidateInfo = {
+                full_name: '',
+                location: '',
+                age: '',
+                physical_condition: '',
+                interests: '',
+                limitations: '',
+                validation: null,
+                executive_summary: null,
+                job_suggestions: null
+            };
+            let profileDraft = {
+                full_name: '',
+                location: '',
+                age: '',
+                physical_condition: '',
+                interests: '',
+                limitations: ''
+            };
+
+            const fieldLabels = {
+                full_name: 'full name',
+                location: 'location',
+                age: 'age',
+                physical_condition: 'physical condition',
+                interests: 'interests',
+                limitations: 'limitations'
+            };
+
+            const blockedNameTokens = new Set([
+                'hi',
+                'hello',
+                'hey',
+                'hiya',
+                'greetings',
+                'morning',
+                'afternoon',
+                'evening',
+                'thanks',
+                'thank',
+                'yo',
+                'sup',
+                'hola',
+                'in',
+                'at',
+                'from',
+                'on',
+                'of',
+                'the',
+                'good',
+                'great',
+                'fine',
+                'okay',
+                'ok',
+                'awesome',
+                'well',
+                'alright',
+                'cool',
+                'tired'
+            ]);
+
+            let activePendingEdit = null;
+            const pendingEditQueue = [];
+
+            function normalizeValue(value) {
+                return (value || '').trim().toLowerCase();
+            }
+
+            function escapeHtml(value) {
+                if (typeof value !== 'string') {
+                    return '';
+                }
+                return value
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            }
+
+            function finalizeCapturedValue(rawValue) {
+                if (!rawValue) {
+                    return '';
+                }
+
+                let cleaned = rawValue.trim().replace(/\s{2,}/g, ' ');
+                cleaned = cleaned.replace(/^[\s,.-]+/, '');
+                cleaned = cleaned.replace(/[.!?]+$/, '').trim();
+                cleaned = cleaned.replace(/\b(?:now|currently|right now|today|please|thanks|thank you)\b$/i, '').trim();
+                cleaned = cleaned.replace(/\s+(?:and|but|so)\s+(?:i|i'm|my)\b.*$/i, '').trim();
+                cleaned = cleaned.replace(/\s+because\s+i\b.*$/i, '').trim();
+                return cleaned;
+            }
+
+            function isLikelyNameCandidate(value) {
+                const candidate = (value || '').trim();
+                if (!candidate) {
+                    return false;
+                }
+                if (candidate.length < 2 || candidate.length > 80) {
+                    return false;
+                }
+                if (/\d/.test(candidate)) {
+                    return false;
+                }
+                const lower = candidate.toLowerCase();
+                if (lower.startsWith('not ')) {
+                    return false;
+                }
+                const tokens = lower.split(/\s+/);
+                if (tokens[0] && blockedNameTokens.has(tokens[0])) {
+                    return false;
+                }
+                return true;
+            }
+
+            function hasCapturedInfo(field) {
+                const value = (profileDraft[field] || '').trim();
+                if (!value) {
+                    return false;
+                }
+                if (field === 'age') {
+                    const numeric = parseInt(value, 10);
+                    return !Number.isNaN(numeric);
+                }
+                return true;
+            }
+
+            const promptPatterns = {
+                full_name: [
+                    /\b(full\s*name|your\s+name)\b/i,
+                    /\bwhat(?:'s| is)\s+your\s+name\b/i,
+                    /\bcould you (?:please )?(?:share|tell me)\s+(?:your\s+)?name\b/i
+                ],
+                location: [
+                    /\bwhere (?:are|r)\s+you\s+(?:located|based|living|from)\b/i,
+                    /\bwhat(?:'s| is)\s+your\s+location\b/i,
+                    /\bcould you (?:please )?(?:share|tell me)\s+(?:your\s+)?location\b/i
+                ],
+                age: [
+                    /\bhow\s+old\s+are\s+you\b/i,
+                    /\bwhat(?:'s| is)\s+your\s+age\b/i,
+                    /\bcould you (?:please )?(?:share|tell me)\s+(?:your\s+)?age\b/i
+                ],
+                physical_condition: [
+                    /\bdescribe\s+(?:your\s+)?physical\s+condition\b/i,
+                    /\bany\s+physical\s+limitations\b/i
+                ],
+                interests: [
+                    /\bwhat\s+are\s+your\s+interests\b/i,
+                    /\bwhat\s+do\s+you\s+enjoy\b/i
+                ],
+                limitations: [
+                    /\bdo\s+you\s+have\s+any\s+limitations\b/i,
+                    /\bwhat\s+limitations\s+do\s+you\s+have\b/i
+                ]
+            };
+
+            function filterBotResponse(content) {
+                if (!content) {
+                    return { html: '', hasVisible: false, hiddenApplied: false };
+                }
+
+                const segments = content.split(/\n+/);
+                const sentenceCandidates = [];
+                segments.forEach(segment => {
+                    const trimmed = segment.trim();
+                    if (!trimmed) {
+                        return;
+                    }
+                    const sentences = trimmed.match(/[^.!?]+[.!?]?/g);
+                    if (sentences) {
+                        sentences.forEach(sentence => {
+                            if (sentence && sentence.trim()) {
+                                sentenceCandidates.push(sentence.trim());
+                            }
+                        });
+                    } else {
+                        sentenceCandidates.push(trimmed);
+                    }
+                });
+
+                const fragments = [];
+                let hasVisible = false;
+                let hiddenApplied = false;
+                const hiddenFields = new Set();
+
+                sentenceCandidates.forEach(segment => {
+                    const text = segment.trim();
+                    if (!text) {
+                        return;
+                    }
+
+                    const shouldHide = Object.entries(promptPatterns).some(([field, patterns]) => {
+                        if (!hasCapturedInfo(field)) {
+                            return false;
+                        }
+                        const matches = patterns.some(pattern => pattern.test(text));
+                        if (matches) {
+                            hiddenFields.add(field);
+                        }
+                        return matches;
+                    });
+
+                    if (shouldHide) {
+                        fragments.push(`<span class="hidden-bot-prompt" aria-hidden="true">${escapeHtml(text)}</span>`);
+                        hiddenApplied = true;
+                    } else {
+                        fragments.push(escapeHtml(text));
+                        hasVisible = true;
+                    }
+                });
+
+                if (!hasVisible && hiddenApplied) {
+                    const hiddenFieldLabels = Array.from(hiddenFields).map(field => fieldLabels[field] || field);
+                    let fallbackText = 'Thanks for confirming!';
+                    if (hiddenFieldLabels.length > 0) {
+                        const readable = hiddenFieldLabels.length === 1
+                            ? hiddenFieldLabels[0]
+                            : `${hiddenFieldLabels.slice(0, -1).join(', ')} and ${hiddenFieldLabels.slice(-1)}`;
+                        fallbackText = `Thanks! We already have your ${readable}.`;
+                    }
+                    fragments.push(`<span class="bot-fallback">${escapeHtml(fallbackText)}</span>`);
+                    hasVisible = true;
+                }
+
+                return {
+                    html: fragments.join(' '),
+                    hasVisible,
+                    hiddenApplied
+                };
+            }
+
+            function applyDraftUpdate(field, value) {
+                if (!field || typeof value !== 'string') {
+                    return;
+                }
+                profileDraft[field] = value;
+                renderProfile();
+            }
+
+            function promptActivePendingEdit() {
+                if (!activePendingEdit) {
+                    return;
+                }
+                const label = fieldLabels[activePendingEdit.field] || activePendingEdit.field;
+                addBotMessage(`You already shared your ${label} as "${activePendingEdit.previousValue}". Do you want to change it to "${activePendingEdit.newValue}"?`);
+            }
+
+            function enqueuePendingEdit(field, newValue, previousValue) {
+                if (!field || !newValue || !previousValue) {
+                    return;
+                }
+
+                const normalizedNewValue = normalizeValue(newValue);
+                if (
+                    (activePendingEdit && activePendingEdit.field === field && normalizeValue(activePendingEdit.newValue) === normalizedNewValue) ||
+                    pendingEditQueue.some(item => item.field === field && normalizeValue(item.newValue) === normalizedNewValue)
+                ) {
+                    return;
+                }
+
+                pendingEditQueue.push({
+                    field,
+                    newValue,
+                    previousValue
+                });
+
+                if (!activePendingEdit) {
+                    activePendingEdit = pendingEditQueue.shift();
+                    promptActivePendingEdit();
+                }
+            }
+
+            function handlePendingEditResponse(message) {
+                if (!activePendingEdit) {
+                    return false;
+                }
+
+                const normalized = (message || '').trim().toLowerCase();
+                if (!normalized) {
+                    return false;
+                }
+
+                const affirmativePattern = /^(?:yes|yep|yeah|sure|correct|absolutely|please do|go ahead|affirmative)\b/;
+                const negativePattern = /^(?:no|nope|nah|not yet|don't|do not)\b/;
+
+                if (affirmativePattern.test(normalized)) {
+                    const { field, newValue } = activePendingEdit;
+                    applyDraftUpdate(field, newValue);
+                    const label = fieldLabels[field] || field;
+                    addBotMessage(`Thanks! I've updated your ${label} to "${newValue}".`);
+                    activePendingEdit = null;
+                    if (pendingEditQueue.length > 0) {
+                        activePendingEdit = pendingEditQueue.shift();
+                        promptActivePendingEdit();
+                    }
+                    return true;
+                }
+
+                if (negativePattern.test(normalized)) {
+                    const { field, previousValue } = activePendingEdit;
+                    const label = fieldLabels[field] || field;
+                    addBotMessage(`Got it. I'll keep your ${label} as "${previousValue}".`);
+                    activePendingEdit = null;
+                    if (pendingEditQueue.length > 0) {
+                        activePendingEdit = pendingEditQueue.shift();
+                        promptActivePendingEdit();
+                    }
+                    return true;
+                }
+
+                return false;
+            }
+
+            function extractProfileInfoFromMessage(message) {
+                const updates = [];
+                if (!message || typeof message !== 'string') {
+                    return updates;
+                }
+
+                const workingMessage = message.trim();
+                if (!workingMessage) {
+                    return updates;
+                }
+
+                if (/name/i.test(workingMessage)) {
+                    const correctionMatches = [...workingMessage.matchAll(/(?:it\s*(?:'s| is)\s+)([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)+)/gi)];
+                    correctionMatches.forEach(match => {
+                        if (!match[1]) return;
+                        const proposed = finalizeCapturedValue(match[1]);
+                        if (isLikelyNameCandidate(proposed)) {
+                            updates.push({ field: 'full_name', value: proposed });
+                        }
+                    });
+                }
+
+                const namePatterns = [
+                    /(?:\bmy name is\b|\bi am\b|\bi'm\b|\bthis is\b|call me)\s+([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)/i,
+                    /^(?:hi|hello|hey)[,\s]*(?:i'm|i am)?\s*([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)*)/i
+                ];
+                for (const pattern of namePatterns) {
+                    const nameMatch = workingMessage.match(pattern);
+                    if (nameMatch && nameMatch[1]) {
+                        let proposed = finalizeCapturedValue(nameMatch[1]);
+                        const correction = proposed.match(/(?:it\s*(?:'s| is)\s+)([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)+)/i);
+                        if (correction && correction[1]) {
+                            proposed = finalizeCapturedValue(correction[1]);
+                        }
+                        if (isLikelyNameCandidate(proposed)) {
+                            updates.push({ field: 'full_name', value: proposed });
+                        }
+                    }
+                }
+
+                const locationPatterns = [
+                    /(?:\bi (?:am|i'm|currently am|currently i'm|live|currently live|reside|stay)\s*(?:currently\s*)?(?:in|at)\s+)([^.?!]+)/i,
+                    /(?:\bi(?:'m)?\s*based in\s+)([^.?!]+)/i,
+                    /(?:\bi (?:hail from|come from|am from|i'm from)\s+)([^.?!]+)/i
+                ];
+
+                for (const pattern of locationPatterns) {
+                    const match = workingMessage.match(pattern);
+                    if (match && match[1]) {
+                        const proposed = finalizeCapturedValue(match[1]);
+                        if (proposed && proposed.length >= 3 && proposed.length <= 80 && /[a-zA-Z]/.test(proposed)) {
+                            updates.push({ field: 'location', value: proposed });
+                            break;
+                        }
+                    }
+                }
+
+                const ageRegex = /(?:\b(?:my age is|i am|i'm)\s+)(\d{1,3})(?:\s*(?:years old|yrs old|yrs|years|y\/o|yo))?\b/i;
+                const ageMatch = workingMessage.match(ageRegex);
+                if (ageMatch) {
+                    const ageNum = parseInt(ageMatch[1], 10);
+                    if (!Number.isNaN(ageNum) && ageNum >= 14 && ageNum <= 100) {
+                        updates.push({ field: 'age', value: `${ageNum}` });
+                    }
+                }
+
+                const seen = new Set();
+                const uniqueUpdates = [];
+                updates.forEach(update => {
+                    if (!update.value) {
+                        return;
+                    }
+                    const key = `${update.field}:${normalizeValue(update.value)}`;
+                    if (!seen.has(key)) {
+                        seen.add(key);
+                        uniqueUpdates.push(update);
+                    }
+                });
+
+                return uniqueUpdates;
+            }
+
+            async function shouldPromptForFieldChange(field, newValue, previousValue, sourceMessage) {
+                if (!conversationId || !token) {
+                    return false;
+                }
+
+                try {
+                    const response = await fetch(`${API_BASE_URL}/chatbot/profile/judge-change`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            conversation_id: conversationId,
+                            field,
+                            proposed_value: newValue,
+                            current_value: previousValue,
+                            message: sourceMessage
+                        })
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Judge API error: ${response.status}`);
+                    }
+
+                    const data = await response.json();
+                    return Boolean(data.should_prompt);
+                } catch (error) {
+                    console.error('Profile change judge failed:', error);
+                    return false;
+                }
+            }
+
+            async function handleUserMessageForProfile(message) {
+                if (!message) {
+                    return;
+                }
+
+                const handledConfirmation = handlePendingEditResponse(message);
+                const updates = extractProfileInfoFromMessage(message);
+
+                for (const { field, value } of updates) {
+                    if (!value) {
+                        continue;
+                    }
+                    const currentValue = profileDraft[field] || '';
+                    if (!currentValue.trim()) {
+                        applyDraftUpdate(field, value);
+                        const label = fieldLabels[field] || field;
+                        addBotMessage(`Noted your ${label} as "${value}".`);
+                        continue;
+                    }
+
+                    if (normalizeValue(currentValue) === normalizeValue(value)) {
+                        continue;
+                    }
+
+                    const shouldPrompt = await shouldPromptForFieldChange(field, value, currentValue, message);
+                    if (shouldPrompt) {
+                        enqueuePendingEdit(field, value, currentValue);
+                    }
+                }
+
+                if (!handledConfirmation && updates.length === 0 && activePendingEdit) {
+                    // If we are awaiting confirmation and the user responded with something unrelated,
+                    // give a gentle reminder without altering data.
+                    promptActivePendingEdit();
+                }
+            }
             
             // Check if user is logged in
             const token = localStorage.getItem('silverstar_token');
@@ -289,8 +819,37 @@
                     userNameEl.textContent = currentUser.name || currentUser.email;
                 }
                 
+                // Try to load persisted candidate profile for this user
+                fetch(`${API_BASE_URL}/profile/details`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                })
+                .then(r => r.ok ? r.json() : {})
+                .then(data => {
+                    if (data && Object.keys(data).length > 0) {
+                        const info = {
+                            full_name: data.full_name || '',
+                            location: data.location || '',
+                            age: data.age || '',
+                            physical_condition: data.physical_condition || '',
+                            interests: data.interests || '',
+                            limitations: data.limitations || ''
+                        };
+                        candidateInfo = { ...candidateInfo, ...info };
+                        profileDraft = { ...profileDraft, ...info };
+                        renderProfile();
+                        if (saveProfileButton) {
+                            saveProfileButton.textContent = 'Update Profile';
+                        }
+                    }
+                })
+                .catch(() => {});
+
                 // Initialize chat with greeting
-                addBotMessage("Hello! I'm your SilverStar job assistant. I'll help you find the perfect job opportunity. Let's start with your name.");
+                addBotMessage("Hello! I'm Asteroid, your SilverStar job assistant. I'll help you find the perfect job opportunity.");
+                addBotMessage("In the interface below, you can write or use voice to chat with me.");
+                addBotMessage("You can chat with me about your job search, your skills, your experience, your location, your salary expectations, your job preferences, etc.");
             })
             .catch(error => {
                 console.error('Token validation error:', error);
@@ -327,10 +886,15 @@
             const logoutButton = document.getElementById('logout-btn');
             
             // Add message to chat
-            function addMessage(content, isUser = false) {
+            function addMessage(content, isUser = false, options = {}) {
+                const { isHtml = false } = options;
                 const messageDiv = document.createElement('div');
                 messageDiv.className = `message ${isUser ? 'user-message' : 'bot-message'}`;
-                messageDiv.textContent = content;
+                if (isHtml) {
+                    messageDiv.innerHTML = content;
+                } else {
+                    messageDiv.textContent = content;
+                }
                 
                 chatContainer.appendChild(messageDiv);
                 chatContainer.scrollTop = chatContainer.scrollHeight;
@@ -338,12 +902,12 @@
                 return messageDiv;
             }
             
-            function addUserMessage(content) {
-                return addMessage(content, true);
+            function addUserMessage(content, options = {}) {
+                return addMessage(content, true, options);
             }
             
-            function addBotMessage(content) {
-                return addMessage(content, false);
+            function addBotMessage(content, options = {}) {
+                return addMessage(content, false, options);
             }
             
             function showTypingIndicator() {
@@ -362,20 +926,211 @@
                     indicator.parentNode.removeChild(indicator);
                 }
             }
+
+            function renderValidation(validation) {
+                if (!profileFeedback) return;
+                profileFeedback.classList.remove('text-green-400', 'text-yellow-300', 'text-gray-300');
+
+                if (!validation) {
+                    profileFeedback.textContent = 'Profile details will appear here as we gather them.';
+                    profileFeedback.classList.add('text-gray-300');
+                    return;
+                }
+
+                const lines = [];
+                if (validation.summary) {
+                    lines.push(validation.summary);
+                }
+                if (validation.issues && validation.issues.length > 0) {
+                    lines.push('Issues:');
+                    validation.issues.forEach(issue => lines.push(`- ${issue}`));
+                }
+                if (validation.missing_fields && validation.missing_fields.length > 0) {
+                    lines.push('Missing details: ' + validation.missing_fields.join(', '));
+                }
+                if (validation.notes) {
+                    lines.push(validation.notes);
+                }
+
+                profileFeedback.textContent = lines.join('\n');
+                profileFeedback.classList.add(validation.is_complete ? 'text-green-400' : 'text-yellow-300');
+            }
+
+            function updateSaveStatus() {
+                if (!profileSaveStatus || !saveProfileButton) return;
+                const hasChanges = profileFields.some(field => {
+                    const draftValue = (profileDraft[field] || '').trim();
+                    const savedValue = (candidateInfo[field] || '').trim();
+                    return draftValue !== savedValue;
+                });
+
+                if (hasChanges) {
+                    profileSaveStatus.textContent = 'Unsaved changes';
+                } else {
+                    profileSaveStatus.textContent = candidateInfo.validation?.is_complete ? 'Profile complete' : 'Profile in progress';
+                }
+
+                profileSaveStatus.classList.toggle('text-amber-300', Boolean(hasChanges));
+                profileSaveStatus.classList.toggle('text-gray-400', !hasChanges);
+                saveProfileButton.disabled = !hasChanges;
+            }
+
+            function renderProfile() {
+                profileFields.forEach(field => {
+                    const input = profileInputs[field];
+                    if (!input) return;
+                    input.value = profileDraft[field] || '';
+                });
+
+                renderValidation(candidateInfo.validation);
+                updateSaveStatus();
+            }
+
+            function syncProfileFromBackend(info) {
+                if (!info) return;
+
+                const previousCandidate = { ...candidateInfo };
+                const previousDraft = { ...profileDraft };
+
+                candidateInfo = {
+                    ...candidateInfo,
+                    ...info,
+                    validation: info.validation || null
+                };
+
+                const nextDraft = { ...previousDraft };
+
+                profileFields.forEach(field => {
+                    const backendValueRaw = candidateInfo[field];
+                    const backendValue = typeof backendValueRaw === 'string' ? backendValueRaw : (backendValueRaw ?? '');
+
+                    const prevDraftValueRaw = previousDraft[field];
+                    const prevDraftValue = typeof prevDraftValueRaw === 'string' ? prevDraftValueRaw : (prevDraftValueRaw ?? '');
+                    const trimmedPrevDraft = (prevDraftValue || '').trim();
+
+                    const prevCandidateValueRaw = previousCandidate[field];
+                    const prevCandidateValue = typeof prevCandidateValueRaw === 'string' ? prevCandidateValueRaw : (prevCandidateValueRaw ?? '');
+                    const trimmedPrevCandidate = (prevCandidateValue || '').trim();
+
+                    const draftMatchesPrevCandidate = trimmedPrevDraft === trimmedPrevCandidate;
+                    const draftIsEmpty = trimmedPrevDraft === '';
+
+                    if (draftMatchesPrevCandidate || draftIsEmpty) {
+                        nextDraft[field] = backendValue || '';
+                    }
+                });
+
+                profileDraft = nextDraft;
+                renderProfile();
+            }
+
+            async function saveProfileUpdates() {
+                if (!saveProfileButton) return;
+
+                const payload = {};
+                profileFields.forEach(field => {
+                    const value = profileDraft[field];
+                    payload[field] = typeof value === 'string' ? value.trim() : value;
+                });
+
+                try {
+                    saveProfileButton.disabled = true;
+                    const originalText = saveProfileButton.textContent;
+                    saveProfileButton.textContent = 'Saving...';
+                    // Save to persistent profile for the signed-in user
+                    const response = await fetch(`${API_BASE_URL}/profile/details`, {
+                        method: 'PUT',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        throw new Error('Failed to save profile');
+                    }
+
+                    const data = await response.json();
+                    const saved = {
+                        full_name: data.full_name || '',
+                        location: data.location || '',
+                        age: data.age || '',
+                        physical_condition: data.physical_condition || '',
+                        interests: data.interests || '',
+                        limitations: data.limitations || ''
+                    };
+                    candidateInfo = { ...candidateInfo, ...saved };
+                    profileDraft = { ...profileDraft, ...saved };
+                    renderProfile();
+                    if (saveProfileButton && originalText === 'Save Profile') {
+                        saveProfileButton.textContent = 'Update Profile';
+                    }
+                    addBotMessage('Your profile has been saved.');
+                } catch (error) {
+                    console.error('Error saving profile:', error);
+                    addBotMessage('Sorry, I ran into an issue saving those changes. Please try again.');
+                } finally {
+                    if (saveProfileButton) {
+                        // Keep "Update Profile" once a profile exists
+                        if (saveProfileButton.textContent === 'Saving...') {
+                            saveProfileButton.textContent = 'Update Profile';
+                        }
+                    }
+                    updateSaveStatus();
+                }
+            }
+
+            profileFields.forEach(field => {
+                const input = profileInputs[field];
+                if (!input) return;
+                input.addEventListener('input', (event) => {
+                    profileDraft[field] = event.target.value;
+                    updateSaveStatus();
+                });
+            });
+
+            if (resetProfileButton) {
+                resetProfileButton.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    profileDraft = {
+                        full_name: candidateInfo.full_name || '',
+                        location: candidateInfo.location || '',
+                        age: candidateInfo.age || '',
+                        physical_condition: candidateInfo.physical_condition || '',
+                        interests: candidateInfo.interests || '',
+                        limitations: candidateInfo.limitations || ''
+                    };
+                    renderProfile();
+                });
+            }
+
+            if (saveProfileButton) {
+                saveProfileButton.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    saveProfileUpdates();
+                });
+            }
+
+            renderProfile();
             
-            // Send message to chatbot
-            async function sendMessage() {
-                const message = messageInput.value.trim();
-                if (!message) return;
+            async function sendChatMessage(message, options = {}) {
+                const { showUserMessage = true } = options;
+                const trimmedMessage = (message || '').trim();
+                if (!trimmedMessage) {
+                    return;
+                }
                 
-                // Add user message to chat
-                addUserMessage(message);
-                messageInput.value = '';
-                
-                // Show typing indicator
-                const typingIndicator = showTypingIndicator();
+                let typingIndicator = null;
                 
                 try {
+                    if (showUserMessage) {
+                        addUserMessage(trimmedMessage);
+                        await handleUserMessageForProfile(trimmedMessage);
+                    }
+                    
+                    typingIndicator = showTypingIndicator();
+                    
                     const response = await fetch(`${API_BASE_URL}/chatbot/chat`, {
                         method: 'POST',
                         headers: {
@@ -383,7 +1138,7 @@
                             'Authorization': `Bearer ${token}`
                         },
                         body: JSON.stringify({
-                            message: message,
+                            message: trimmedMessage,
                             conversation_id: conversationId
                         })
                     });
@@ -394,128 +1149,134 @@
                     
                     const data = await response.json();
                     
-                    // Remove typing indicator
-                    removeTypingIndicator(typingIndicator);
-                    
-                    // Add bot response to chat
-                    addBotMessage(data.response);
-                    
-                    // Update conversation ID
+                    const filteredResponse = filterBotResponse(data.response);
+                    if (filteredResponse.html) {
+                        addBotMessage(filteredResponse.html, { isHtml: true });
+                    }
                     conversationId = data.conversation_id;
                     
-                    // If we have candidate info, we could display it or use it for recommendations
-                    if (data.candidate_info && Object.keys(data.candidate_info).length > 0) {
-                        console.log('Candidate info:', data.candidate_info);
+                    if (data.candidate_info) {
+                        syncProfileFromBackend(data.candidate_info);
                     }
                 } catch (error) {
                     console.error('Error sending message:', error);
-                    removeTypingIndicator(typingIndicator);
                     addBotMessage('Sorry, I encountered an error. Please try again.');
+                } finally {
+                    removeTypingIndicator(typingIndicator);
                 }
             }
             
-            // Voice recording functionality
-            async function startRecording() {
-                try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    mediaRecorder = new MediaRecorder(stream);
-                    audioChunks = [];
-                    
-                    mediaRecorder.ondataavailable = (event) => {
-                        audioChunks.push(event.data);
-                    };
-                    
-                    mediaRecorder.onstop = async () => {
-                        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-                        const audioBase64 = await blobToBase64(audioBlob);
-                        
-                        // Show typing indicator
-                        const typingIndicator = showTypingIndicator();
-                        
-                        try {
-                            const response = await fetch(`${API_BASE_URL}/chatbot/voice`, {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json',
-                                    'Authorization': `Bearer ${token}`
-                                },
-                                body: JSON.stringify({
-                                    audio_data: audioBase64,
-                                    conversation_id: conversationId
-                                })
-                            });
-                            
-                            if (!response.ok) {
-                                throw new Error('Failed to send voice message');
-                            }
-                            
-                            const data = await response.json();
-                            
-                            // Remove typing indicator
-                            removeTypingIndicator(typingIndicator);
-                            
-                            // Add transcribed text and response to chat
-                            if (data.transcribed_text) {
-                                addUserMessage(data.transcribed_text);
-                            }
-                            
-                            addBotMessage(data.response_text);
-                            
-                            // Update conversation ID
-                            conversationId = data.conversation_id;
-                            
-                            // Play response audio if available
-                            if (data.response_audio) {
-                                playAudioResponse(data.response_audio);
-                            }
-                        } catch (error) {
-                            console.error('Error sending voice message:', error);
-                            removeTypingIndicator(typingIndicator);
-                            addBotMessage('Sorry, I encountered an error with your voice message. Please try again.');
+            function sendMessage() {
+                const message = messageInput.value.trim();
+                if (!message) {
+                    return;
+                }
+                
+                messageInput.value = '';
+                sendChatMessage(message, { showUserMessage: true });
+            }
+            
+            function initializeSpeechRecognition() {
+                const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+                if (!SpeechRecognition) {
+                    return;
+                }
+                
+                speechRecognition = new SpeechRecognition();
+                speechRecognition.lang = 'en-US';
+                speechRecognition.continuous = false;
+                speechRecognition.interimResults = true;
+                speechRecognitionSupported = true;
+                
+                speechRecognition.addEventListener('result', (event) => {
+                    for (let i = event.resultIndex; i < event.results.length; i++) {
+                        const result = event.results[i];
+                        if (result.isFinal && result[0] && result[0].transcript) {
+                            speechSegments.push(result[0].transcript.trim());
                         }
-                    };
+                    }
+                });
+                
+                speechRecognition.addEventListener('end', () => {
+                    if (!isRecording) {
+                        speechSegments = [];
+                        return;
+                    }
                     
-                    mediaRecorder.start();
-                    isRecording = true;
-                    voiceButton.classList.add('recording');
+                    finalizeSpeechTranscript();
+                });
+                
+                speechRecognition.addEventListener('error', (event) => {
+                    console.error('Speech recognition error:', event.error);
+                    isRecording = false;
+                    voiceButton.classList.remove('recording');
+                    addBotMessage('Sorry, there was an issue with speech recognition. Please try again or use text input.');
+                });
+            }
+            
+            function finalizeSpeechTranscript() {
+                const transcript = speechSegments.join(' ').trim();
+                speechSegments = [];
+                
+                if (!isRecording) {
+                    return;
+                }
+                
+                isRecording = false;
+                voiceButton.classList.remove('recording');
+                
+                if (!transcript) {
+                    return;
+                }
+                
+                sendChatMessage(transcript, { showUserMessage: true });
+            }
+            
+            function startRecording() {
+                if (isRecording) {
+                    return;
+                }
+                
+                if (!speechRecognitionSupported || !speechRecognition) {
+                    addBotMessage('Speech recognition is not supported in this browser. Please use text input instead.');
+                    return;
+                }
+                
+                speechSegments = [];
+                isRecording = true;
+                voiceButton.classList.add('recording');
+                
+                try {
+                    speechRecognition.start();
                 } catch (error) {
-                    console.error('Error accessing microphone:', error);
-                    addBotMessage('Sorry, I could not access your microphone. Please check your permissions.');
+                    console.error('Failed to start speech recognition:', error);
+                    isRecording = false;
+                    voiceButton.classList.remove('recording');
+                    addBotMessage('Unable to start speech recognition. Please try again or use text input.');
                 }
             }
             
             function stopRecording() {
-                if (mediaRecorder && isRecording) {
-                    mediaRecorder.stop();
+                if (!isRecording) {
+                    return;
+                }
+                
+                if (speechRecognitionSupported && speechRecognition) {
+                    try {
+                        speechRecognition.stop();
+                    } catch (error) {
+                        console.error('Failed to stop speech recognition:', error);
+                        finalizeSpeechTranscript();
+                    }
+                } else {
                     isRecording = false;
                     voiceButton.classList.remove('recording');
-                    
-                    // Stop all tracks to release the microphone
-                    mediaRecorder.stream.getTracks().forEach(track => track.stop());
-                }
-            }
-            
-            function blobToBase64(blob) {
-                return new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result.split(',')[1]);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(blob);
-                });
-            }
-            
-            function playAudioResponse(audioBase64) {
-                try {
-                    const audio = new Audio(`data:audio/mp3;base64,${audioBase64}`);
-                    audio.play().catch(error => {
-                        console.error('Error playing audio response:', error);
-                    });
-                } catch (error) {
-                    console.error('Error creating audio element:', error);
                 }
             }
             
             // Event listeners
+            initializeSpeechRecognition();
+            
             sendButton.addEventListener('click', sendMessage);
             
             messageInput.addEventListener('keypress', (e) => {

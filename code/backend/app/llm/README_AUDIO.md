@@ -25,9 +25,9 @@ llm/audio/
 To use the audio functionality, you'll need to install the following dependencies:
 
 ```bash
-# All dependencies are included in the main requirements.txt file
+# Dependencies are managed in backend/pyproject.toml
 cd backend
-pip install -r requirements.txt
+uv sync
 ```
 
 The audio-specific dependencies are:
@@ -75,7 +75,7 @@ audio_base64 = await voice_service.text_to_speech("Hello, this is a test message
 
 ## Configuration
 
-The audio functionality uses the existing `.llm_config` file for Google Cloud Text-to-Speech configuration. If Google Cloud is not available, it will fall back to the local pyttsx3 engine.
+The audio functionality uses the same environment variables defined in `code/.env` for Google Cloud Text-to-Speech configuration. If Google Cloud is not available, it will fall back to the local pyttsx3 engine.
 
 ## Dependencies
 

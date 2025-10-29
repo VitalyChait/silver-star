@@ -38,11 +38,11 @@ venv/
 ENV/
 env/
 code/backend/venv/
+uv.lock
 
 # Env and secrets
 .env
 *.env
-code/backend/app/llm/.llm_config
 code/backend/app/llm/.llm_cache
 code/backend/app/llm/.credentials
 code/backend/app/llm/credentials.json

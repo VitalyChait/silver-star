@@ -56,6 +56,7 @@ class AnswerValidator:
         - If the user says they don't know or can't answer, it's NOT a valid answer
         - For name questions: Look for patterns like "My name is X", "I'm X", "I am X", or just the name itself
         - For location questions: Look for city, state, country names or phrases like "I live in X", "I'm located in X"
+        - Answers that describe the assistant (e.g., "As an AI I don't have..."), refuse to provide info, or discuss unrelated topics are NOT valid.
         - Be lenient - if the user provides any information that could be the answer, consider it valid
         
         Respond with valid JSON only:
@@ -69,9 +70,10 @@ class AnswerValidator:
         """
         
         try:
+            history_tail = conversation_history[-6:] if conversation_history else None
             response = await llm_service.generate_response(
                 validation_prompt,
-                conversation_history,
+                history_tail,
                 temperature=0.1  # Lower temperature for more consistent validation
             )
             

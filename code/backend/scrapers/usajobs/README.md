@@ -2,11 +2,12 @@
 
 This module provides a client and AI agent interface for interacting with the USAJOBS API. It allows searching for federal job listings and retrieving job details.
 
-## Installation
+## Installation (uv)
 
 1. Install the required dependencies:
 ```bash
-pip install -r requirements.txt
+cd code/backend
+uv sync --extra usajobs
 ```
 
 2. Set up your environment variables:

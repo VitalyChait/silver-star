@@ -1,4 +1,22 @@
-from crewai.tools import BaseTool
+"""Job fetching tool with CrewAI BaseTool compatibility.
+
+Falls back to a minimal shim if crewai isn't available or BaseTool moved.
+"""
+try:
+    from crewai.tools import BaseTool  # older CrewAI
+except Exception:  # pragma: no cover
+    try:
+        from crewai_tools import BaseTool  # some distributions expose this
+    except Exception:
+        class BaseTool:  # minimal shim for our usage
+            name: str = "BaseTool"
+            description: str = ""
+            args_schema = None
+            def __init__(self, **kwargs):
+                for k, v in kwargs.items():
+                    setattr(self, k, v)
+            def run(self, **kwargs):
+                return self._run(**kwargs)
 from pydantic import BaseModel, Field
 from typing import Type, Dict, Any, List, Optional
 import requests
