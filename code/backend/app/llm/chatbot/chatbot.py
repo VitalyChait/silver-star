@@ -108,6 +108,7 @@ class CandidateChatbot:
         self.last_question = None  # Track the last question asked
         self.last_question_type = None  # Track the type of the last question
         self.enable_audio = enable_audio  # Whether to play audio responses
+        self.retry_counts: Dict[str, int] = {}
 
     def seed_profile(self, profile: Dict[str, Any]) -> None:
         """Seed the chatbot with a pre-existing user profile and move to confirmation state.
@@ -339,26 +340,45 @@ class CandidateChatbot:
                 validated_value = validation_result.get("extracted_value")
                 if isinstance(validated_value, str):
                     validated_value = validated_value.strip()
+                # Clear retry count on success
+                if self.last_question_type:
+                    self.retry_counts[self.last_question_type] = 0
             else:
-                prompt = f"""
-                You are a job recruitment assistant for Silver Star.
-                The user didn't answer your question properly.
-                Ask them the same question again in a different way.
-                Do not mention being an AI or assistant.
-                Your previous question was: "{self.last_question}"
-                """
-                
-                response = await llm_service.generate_response(prompt)
+                # Stuck-loop breaker: escalate clarity after 2 attempts
+                qtype = self.last_question_type
+                self.retry_counts[qtype] = self.retry_counts.get(qtype, 0) + 1
+
+                # Allow user to skip
+                if message.strip().lower() == "skip":
+                    # Move on without setting the field
+                    self.last_question = None
+                    self.last_question_type = None
+                    self.conversation_state = "validating_profile"
+                    return await self._validate_profile(), self.candidate_info
+
+                if self.retry_counts[qtype] >= 2:
+                    label = self.FIELD_LABEL_MAP.get(qtype, qtype.replace("_", " "))
+                    examples = {
+                        "full_name": "e.g., 'Jane Doe'",
+                        "location": "e.g., 'Boston, MA'",
+                        "age": "e.g., '65'",
+                        "physical_condition": "e.g., 'excellent health'",
+                        "interests": "e.g., 'teaching'",
+                        "limitations": "e.g., 'no remote work'",
+                    }
+                    example = examples.get(qtype, "")
+                    response = (
+                        f"I still need your {label}. {example} If you'd rather come back to this later, say 'skip'."
+                    )
+                else:
+                    # Re-ask simply without LLM to avoid repetition loops
+                    label = self.FIELD_LABEL_MAP.get(self.last_question_type, self.last_question_type)
+                    response = f"Could you please share your {label}?"
+
                 self.conversation_history.append({"role": "assistant", "content": response})
-                
-                # Play the response as audio if enabled
                 if self.enable_audio:
                     await self._play_response_audio(response)
-                
-                # Update the last question
                 self.last_question = response
-                # Keep the same question type
-                
                 return response, self.candidate_info
         
         inline_name = None
@@ -713,6 +733,19 @@ class CandidateChatbot:
         schema = {"location": "string"}
         location = None
         
+        def _extract_age_inline(text: str) -> Optional[str]:
+            if not text:
+                return None
+            digits = re.findall(r"\b(\d{1,3})\b", text)
+            for d in digits:
+                try:
+                    val = int(d)
+                    if 10 <= val <= 120:
+                        return str(val)
+                except ValueError:
+                    continue
+            return None
+        
         if validated_value:
             location = validated_value.strip(" .,!")
         
@@ -752,8 +785,26 @@ class CandidateChatbot:
             
             if location:
                 self.candidate_info["location"] = location
-                self.conversation_state = "collecting_age"
+                # Try to capture age from the same message to avoid re-asking
+                inline_age = _extract_age_inline(message)
+                if inline_age:
+                    self.candidate_info["age"] = inline_age
+                    # Proceed to physical condition next
+                    inline_condition = self._detect_physical_condition_from_message(message)
+                    if inline_condition:
+                        self.candidate_info["physical_condition"] = inline_condition
+                        self.conversation_state = "collecting_interests"
+                        response = "Thanks for sharing. What kinds of activities or roles are you most interested in doing?"
+                        self.last_question = response
+                        self.last_question_type = "interests"
+                        return response
+                    self.conversation_state = "collecting_physical_condition"
+                    response = "Thank you. Could you describe your current physical condition or anything I should keep in mind?"
+                    self.last_question = response
+                    self.last_question_type = "physical_condition"
+                    return response
 
+                self.conversation_state = "collecting_age"
                 preferred_name = self._preferred_name()
                 name_fragment = f", {preferred_name}" if preferred_name else ""
                 response = f"Thanks{name_fragment}! To make sure opportunities are appropriate, could you share your age?"
