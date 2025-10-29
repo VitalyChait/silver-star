@@ -145,9 +145,10 @@ class JobRecommendationService:
         
         try:
             response = await llm_service.generate_response(
-                prompt, 
+                prompt,
                 temperature=0.3,  # Lower temperature for more consistent recommendations
-                max_output_tokens=900 * int(os.getenv("TOKENS_MULT"))
+                max_output_tokens=900 * int(os.getenv("TOKENS_MULT")),
+                agent_role="recommendations",
             )
             
             # Parse the JSON response

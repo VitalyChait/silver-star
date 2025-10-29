@@ -71,7 +71,10 @@ class ProfileValidationService:
             """
 
             llm_response = await llm_service.generate_response(
-                validation_prompt, temperature=0.2, max_output_tokens=1024 * int(os.getenv("TOKENS_MULT"))
+                validation_prompt,
+                temperature=0.2,
+                max_output_tokens=1024 * int(os.getenv("TOKENS_MULT")),
+                agent_role="profile_validator",
             )
 
             llm_result = json.loads(strip_json_code_fences(llm_response))

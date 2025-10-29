@@ -79,7 +79,7 @@ LLM_LOG_DIR="$LOG_DIR/llm"
 mkdir -p "$LLM_LOG_DIR"
 
 # Always start with fresh logs for this run
-rm -rf "$BACKEND_LOG_FILE" "$FRONTEND_LOG_FILE" "$LLM_LOG_DIR/*
+rm -rf "$BACKEND_LOG_FILE" "$FRONTEND_LOG_FILE" "$LLM_LOG_DIR/*"
 
 bash "$SCRIPT_DIR/stop.sh"
 

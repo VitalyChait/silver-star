@@ -75,7 +75,8 @@ class AnswerValidator:
             response = await llm_service.generate_response(
                 validation_prompt,
                 history_tail,
-                temperature=0.1  # Lower temperature for more consistent validation
+                temperature=0.1,  # Lower temperature for more consistent validation
+                agent_role="answer_validator",
             )
             
             # Parse the JSON response

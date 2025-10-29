@@ -8,6 +8,7 @@ import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 from .utils import strip_json_code_fences
+from .llm_logger import log_event, ensure_log_dir
 
 try:
     from openai import OpenAI
@@ -30,6 +31,11 @@ class LLMService:
         self.openai_model = None
         self._initialize_gemini()
         self._initialize_openai()
+        # Ensure log directory exists if logging is enabled
+        try:
+            ensure_log_dir()
+        except Exception:
+            pass
 
     def _initialize_gemini(self) -> None:
         """Initialize the Gemini API client."""
@@ -86,6 +92,7 @@ class LLMService:
         conversation_history: Optional[List[Dict[str, str]]] = None,
         temperature: float = 0.7,
         max_output_tokens: int = 1024 * int(os.getenv("TOKENS_MULT")),
+        agent_role: str = "default",
     ) -> str:
         """
         Generate a response from the LLM.
@@ -99,6 +106,39 @@ class LLMService:
         Returns:
             The generated text response
         """
+        # Determine role if not provided
+        if agent_role in {None, "", "default"}:
+            try:
+                import inspect
+                frm = inspect.stack()[1]
+                mod = inspect.getmodule(frm[0])
+                mod_name = getattr(mod, "__name__", "")
+                if "chatbot.chatbot" in mod_name:
+                    agent_role = "chatbot"
+                elif "chatbot.profile_validator" in mod_name:
+                    agent_role = "profile_validator"
+                elif "chatbot.validation" in mod_name:
+                    agent_role = "answer_validator"
+                elif "chatbot.recommendations" in mod_name:
+                    agent_role = "recommendations"
+            except Exception:
+                pass
+
+        # Log request
+        log_event(
+            agent_role,
+            {
+                "event": "request",
+                "backend": "gemini|openai-fallback",
+                "temperature": temperature,
+                "max_output_tokens": max_output_tokens,
+                "prompt": prompt,
+                "history_tail": (conversation_history[-6:] if conversation_history else None),
+            },
+        )
+
+        backend_used = None
+
         for attempt in range(2):
             text = await self._generate_with_gemini(
                 prompt,
@@ -109,6 +149,16 @@ class LLMService:
             if text:
                 if attempt > 0:
                     logger.info("[service.py] Gemini succeeded on retry %d.", attempt)
+                backend_used = "gemini"
+                # Log response
+                log_event(
+                    agent_role,
+                    {
+                        "event": "response",
+                        "backend": backend_used,
+                        "text": text,
+                    },
+                )
                 return text
             logger.debug("[service.py] Gemini attempt %d returned no content.", attempt + 1)
 
@@ -121,9 +171,26 @@ class LLMService:
         )
         if fallback:
             logger.info("[service.py] Response served via OpenAI fallback.")
+            backend_used = "openai"
+            log_event(
+                agent_role,
+                {
+                    "event": "response",
+                    "backend": backend_used,
+                    "text": fallback,
+                },
+            )
             return fallback
 
         logger.error("[service.py] All LLM backends failed to generate a response.")
+        log_event(
+            agent_role,
+            {
+                "event": "error",
+                "backend": backend_used or "unknown",
+                "message": "All LLM backends failed",
+            },
+        )
         return self.GENERIC_ERROR_MESSAGE
 
     async def _generate_with_gemini(
@@ -279,7 +346,9 @@ class LLMService:
         self, 
         prompt: str, 
         schema: Dict[str, Any],
-        conversation_history: Optional[List[Dict[str, str]]] = None
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+        *,
+        agent_role: str = "default",
     ) -> Dict[str, Any]:
         """
         Extract structured data from text using the LLM.
@@ -306,7 +375,8 @@ class LLMService:
         response = await self.generate_response(
             extraction_prompt,
             history_tail,
-            temperature=0.2  # Lower temperature for more consistent extraction
+            temperature=0.2,  # Lower temperature for more consistent extraction
+            agent_role=agent_role,
         )
         
         try:
@@ -315,6 +385,15 @@ class LLMService:
             return json.loads(cleaned)
         except json.JSONDecodeError:
             logger.error(f"[service.py] Failed to parse JSON response: {response}")
+            log_event(
+                agent_role,
+                {
+                    "event": "parse_error",
+                    "backend": "unknown",
+                    "text": response,
+                    "message": "Failed to parse JSON response",
+                },
+            )
             # Return empty structure with the same schema
             return {key: None for key in schema.keys()}
 
