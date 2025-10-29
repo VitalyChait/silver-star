@@ -5,6 +5,7 @@ This script sets up the Python path correctly before starting the server.
 """
 
 import sys
+import os
 from pathlib import Path
 import copy
 
@@ -106,7 +107,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "app.main:app",
         host="127.0.0.1",
-        port=8000,
+        port=int(os.getenv("PYTHON_APP_PORT")),
         reload=True,
         log_config=log_config,
     )

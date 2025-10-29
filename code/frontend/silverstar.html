@@ -270,7 +270,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             // --- Authentication State ---
             let currentUser = null;
-            const API_BASE_URL = 'http://localhost:8000/api';
+            const API_BASE_URL = 'http://localhost:${PYTHON_APP_PORT}/api';
             
             // Check if user is already logged in (from localStorage)
             const token = localStorage.getItem('silverstar_token');
@@ -508,7 +508,7 @@
                 // Remove after 3 seconds
                 setTimeout(() => {
                     notification.remove();
-                }, 3000);
+                }, ${NODE_APP_PORT});
             }
 
             // --- "Job Now" Flow Logic ---

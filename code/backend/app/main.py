@@ -36,7 +36,7 @@ def create_app() -> FastAPI:
     # CORS for local dev
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[settings.frontend_origin, "http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_origins=[settings.frontend_origin, f"http://localhost:{int(os.getenv('NODE_APP_PORT'))}", f"http://127.0.0.1:{int(os.getenv('NODE_APP_PORT'))}"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

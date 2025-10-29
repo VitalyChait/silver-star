@@ -22,3 +22,6 @@ DEBUG_INTENT=0
 # Price control
 TOKENS_MULT=16
 
+# Application ports
+PYTHON_APP_PORT=8000
+NODE_APP_PORT=3000

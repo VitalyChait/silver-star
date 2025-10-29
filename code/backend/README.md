@@ -27,8 +27,8 @@ uv sync --extra usajobs
 
 2. Configure environment variables:
 ```bash
-cp ../env_example ../.env
-# Edit ../.env with your API keys and provider settings
+cp code/env_example code/.env
+# Edit code/.env with your API keys and provider settings
 ```
 
 3. Initialize the database with sample jobs:
@@ -45,7 +45,7 @@ uv run python start_server.py
 
 Or run directly with uvicorn:
 ```bash
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+uv run uvicorn app.main:app --host 127.0.0.1 --port $PYTHON_APP_PORT --reload
 ```
 
 ## API Endpoints
@@ -73,7 +73,7 @@ uv run uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 
 ## Frontend
 
-The frontend is located in `../../frontend/` and consists of:
+The frontend is located in `code/frontend/` and consists of:
 
 1. `silverstar.html` - Main landing page with authentication
 2. `chatbot.html` - Chatbot interface for job search

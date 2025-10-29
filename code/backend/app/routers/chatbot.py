@@ -126,7 +126,8 @@ async def chat_with_bot(
         conversation_id = message.conversation_id or f"anon_{datetime.now().timestamp()}"
         
         if conversation_id not in chatbot_sessions:
-            chatbot_sessions[conversation_id] = CandidateChatbot(enable_audio=True)
+            # Disable server-side audio playback by default to avoid noisy decoder errors
+            chatbot_sessions[conversation_id] = CandidateChatbot(enable_audio=False)
         
         chatbot = chatbot_sessions[conversation_id]
 
@@ -182,7 +183,8 @@ async def voice_chat_with_bot(
         conversation_id = request.conversation_id or f"anon_{datetime.now().timestamp()}"
         
         if conversation_id not in chatbot_sessions:
-            chatbot_sessions[conversation_id] = CandidateChatbot(enable_audio=True)
+            # Disable server-side audio playback by default to avoid noisy decoder errors
+            chatbot_sessions[conversation_id] = CandidateChatbot(enable_audio=False)
         
         chatbot = chatbot_sessions[conversation_id]
         

@@ -9,7 +9,7 @@ echo "=========================================="
 echo "SilverStar Application Setup and Run"
 echo "=========================================="
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd "$SCRIPT_DIR" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname $SCRIPT_DIR)"
 LOG_DIR="$REPO_DIR/logs"
 
@@ -29,14 +29,6 @@ print_success() {
 print_error() {
     echo -e "\033[1;31m[ERROR]\033[0m $1"
 }
-
-# Ensure logs directory exists early
-mkdir -p "$LOG_DIR"
-BACKEND_LOG_FILE="$LOG_DIR/backend.log"
-FRONTEND_LOG_FILE="$LOG_DIR/frontend.log"
-
-# Always start with fresh logs for this run
-rm -f "$BACKEND_LOG_FILE" "$FRONTEND_LOG_FILE"
 
 sanitize_string() {
     local value="$1"
@@ -93,82 +85,28 @@ sanity_check_env_keys() {
     print_success "Environment sanity check passed"
 }
 
-run_chatbot_sanity_check() {
-    local url="http://localhost:8000/api/chatbot/chat"
-    local payload='{"message":"Hello from the SilverStar sanity check!"}'
-    local attempts=0
-    local max_attempts=5
-    local delay_seconds=3
-    local last_response=""
-    local exit_code=1
-
-    while [ $attempts -lt $max_attempts ]; do
-        last_response=$(curl --silent --show-error --connect-timeout 2 --max-time 5 \
-            -H 'Content-Type: application/json' \
-            -X POST \
-            -d "$payload" \
-            "$url" 2>&1)
-        exit_code=$?
-
-        if [ $exit_code -eq 0 ] && [[ "$last_response" == *'"response"'* ]]; then
-            local preview
-            preview=$(echo "$last_response" | sed -n 's/.*"response"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
-            if [ -n "$preview" ]; then
-                print_success "Chatbot sanity check passed with response: \"$preview\""
-            else
-                print_success "Chatbot sanity check passed."
-            fi
-            return 0
-        fi
-
-        print_status "Chatbot sanity check attempt $((attempts + 1)) failed. Retrying in $delay_seconds seconds..."
-        attempts=$((attempts + 1))
-        sleep $delay_seconds
-    done
-
-    print_error "Chatbot sanity check failed after $max_attempts attempts."
-    if [ -n "$last_response" ]; then
-        print_error "Last response: $last_response"
-    fi
-    return 1
-}
-
-# Check if we're in the right directory
-if [ ! -f "$REPO_DIR/code/backend/start_server.py" ]; then
-    print_error "Please run this script from the silver-star root directory"
-    exit 1
-fi
-
-# Step 0: Install required system packages (Ubuntu/Debian)
+# Step 1: Install required system packages (Ubuntu/Debian)
 print_status "Step 0: Installing system packages (apt)..."
 bash "$SCRIPT_DIR/install_ubuntu_dependencies.sh"
-
-# Clean up any existing processes
-print_status "Cleaning up any existing processes..."
-pkill -f "uvicorn app.main:app" 2>/dev/null || true
-pkill -f "python -m http.server" 2>/dev/null || true
-
-# Step 1: Install dependencies
-print_status "Step 1: Installing Python dependencies with uv..."
-cd "$REPO_DIR/code/backend"
 
 # Ensure uv is installed
 if ! command -v uv >/dev/null 2>&1; then
     print_error "uv not found. Please install uv:"
     echo "  curl -LsSf https://astral.sh/uv/install.sh | sh"
-    echo "Then re-run: ./setup_and_run.sh"
+    echo "Then re-run: $SCRIPT_DIR/setup_and_run.sh"
     exit 1
 fi
 
-# Sync environment from pyproject
-print_status "Syncing environment (uv sync)..."
+# Step 2: Install Python dependencies
+print_status "Step 2: Installing Python dependencies with uv..."
+cd "$REPO_DIR/code/backend"
 uv sync
-print_success "Dependencies installed successfully via uv"
+print_success "Python dependencies installed successfully via uv"
 
-# Step 2: Configure environment variables
-print_status "Step 2: Setting up environment configuration..."
-ENV_FILE="../.env"
-ENV_EXAMPLE="../env_example"
+# Step 3: Configure environment variables
+print_status "Step 3: Setting up environment configuration..."
+ENV_FILE="$REPO_DIR/code/.env"
+ENV_EXAMPLE="$REPO_DIR/code/env_example"
 
 if [ -f "$ENV_FILE" ]; then
     print_status ".env file already exists"
@@ -181,14 +119,8 @@ fi
 
 sanity_check_env_keys "$ENV_FILE"
 
-print_status "Loading environment variables from $ENV_FILE"
-set -a
-source "$ENV_FILE"
-set +a
-print_success "Environment variables loaded"
-
-# Step 3: Initialize database
-print_status "Step 3: Initializing database with sample jobs..."
+# Step 4: Initialize database
+print_status "Step 4: Initializing database with sample jobs..."
 if [ -f "data.db" ]; then
     print_status "Database already exists"
 
@@ -217,84 +149,16 @@ if [ -f "data.db" ]; then
     fi
 fi
 
+print_status "Loading environment variables from $ENV_FILE"
+set -a
+source "$ENV_FILE"
+set +a
+print_success "Environment variables loaded"
+
 uv run python populate_jobs.py
 print_success "Database initialized with sample jobs"
-
-# Step 4: Remove unnecessary script files
-print_status "Step 4: Cleaning up unnecessary script files..."
-cd "$REPO_DIR"
-
-# Remove individual run scripts since we now have a comprehensive one
-if [ -f "run_me.sh" ]; then
-    print_status "Removing run_me.sh (replaced by setup_and_run.sh)..."
-    rm run_me.sh
-fi
-
-if [ -f "run_dev.sh" ]; then
-    print_status "Removing run_dev.sh (replaced by setup_and_run.sh)..."
-    rm run_dev.sh
-fi
-
-print_success "Cleanup completed"
 
 # Step 5: Start the application
 print_status "Step 5: Starting SilverStar application..."
 
-# Clean up any existing processes on the ports we need
-print_status "Checking for existing processes on required ports..."
-# Kill any process using port 8000
-lsof -ti:8000 | xargs kill -9 2>/dev/null || true
-# Kill any process using port 3000
-lsof -ti:3000 | xargs kill -9 2>/dev/null || true
-
-# Start the backend server
-print_status "Starting backend server..."
-cd "$REPO_DIR/code/backend"
-uv run python start_server.py &
-BACKEND_PID=$!
-
-# Wait a moment for the backend to start
-sleep 3
-
-# Start a simple HTTP server for the frontend
-print_status "Starting frontend server..."
-cd "$REPO_DIR/code/frontend"
-( uv run python -m http.server 3000 2>&1 | tee -a "$FRONTEND_LOG_FILE" ) &
-FRONTEND_PID=$!
-cd "$REPO_DIR"
-
-print_status "Waiting for services before running chatbot sanity check..."
-sleep 5
-print_status "Running chatbot sanity check..."
-if run_chatbot_sanity_check; then
-    :
-else
-    print_error "Chatbot sanity check did not complete successfully. Please review the backend logs."
-fi
-
-# Function to cleanup on exit
-cleanup() {
-    echo ""
-    print_status "Stopping servers..."
-    kill $BACKEND_PID 2>/dev/null || true
-    kill $FRONTEND_PID 2>/dev/null || true
-    print_success "All servers stopped"
-    exit 0
-}
-
-# Set up trap to cleanup on Ctrl+C
-trap cleanup INT
-
-echo ""
-echo "=========================================="
-print_success "SilverStar application is ready!"
-echo "=========================================="
-echo "Backend: http://localhost:8000"
-echo "Frontend: http://localhost:3000/silverstar.html"
-echo "Chatbot: http://localhost:3000/chatbot.html"
-echo "API Docs: http://localhost:8000/docs"
-echo ""
-echo "Press Ctrl+C to stop all servers"
-
-# Wait for processes
-wait
+bash "$SCRIPT_DIR/run.sh"
