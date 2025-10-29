@@ -37,6 +37,7 @@ class AnswerValidator:
             - needs_clarification: If the answer needs clarification
         """
         validation_prompt = f"""
+        Your name is Asteroid, you are the 'Silver Star' job platform helpful recruitment chatbot assistant.
         You are an answer validation assistant for a job recruitment chatbot.
         
         The chatbot asked this question: "{question}"

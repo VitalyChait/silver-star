@@ -1211,6 +1211,53 @@
 
             renderProfile();
             
+            function prettifyExecutiveSummaryBlocks(text) {
+                if (!text || typeof text !== 'string') return text;
+                try {
+                    const pattern = /Executive Summary:\s*```json([\s\S]*?)```/i;
+                    const match = text.match(pattern);
+                    if (!match) return text;
+
+                    const jsonRaw = match[1].trim();
+                    let obj;
+                    try {
+                        obj = JSON.parse(jsonRaw);
+                    } catch (_e) {
+                        return text; // leave as-is if JSON parse fails
+                    }
+
+                    const lines = [];
+                    if (obj.summary) {
+                        lines.push(String(obj.summary).trim());
+                    }
+                    if (Array.isArray(obj.suggested_roles) && obj.suggested_roles.length) {
+                        lines.push('Suggested roles:');
+                        obj.suggested_roles.forEach((r, idx) => {
+                            const role = r.role ? String(r.role).trim() : 'Role';
+                            const reason = r.reason ? String(r.reason).trim() : '';
+                            const notes = r.notes ? String(r.notes).trim() : '';
+                            let line = `  ${idx + 1}. ${role}`;
+                            if (reason) line += ` — ${reason}`;
+                            if (notes) line += ` (${notes})`;
+                            lines.push(line);
+                        });
+                    }
+                    if (Array.isArray(obj.next_steps) && obj.next_steps.length) {
+                        lines.push('Next steps:');
+                        obj.next_steps.forEach((s, idx) => {
+                            const step = String(s || '').trim();
+                            if (step) lines.push(`  ${idx + 1}. ${step}`);
+                        });
+                    }
+
+                    const pretty = lines.join('\n');
+                    const replacement = `Executive Summary:\n${pretty}`;
+                    return text.replace(pattern, replacement);
+                } catch (_err) {
+                    return text;
+                }
+            }
+
             async function sendChatMessage(message, options = {}) {
                 const { showUserMessage = true } = options;
                 const trimmedMessage = (message || '').trim();
@@ -1246,7 +1293,8 @@
                     
                     const data = await response.json();
                     
-                    const filteredResponse = filterBotResponse(data.response);
+                    const improvedText = prettifyExecutiveSummaryBlocks(data.response);
+                    const filteredResponse = filterBotResponse(improvedText);
                     if (filteredResponse.html) {
                         addBotMessage(filteredResponse.html, { isHtml: true });
                     }

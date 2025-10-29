@@ -462,6 +462,7 @@ class CandidateChatbot:
         }
 
         prompt = f"""
+        Your name is Asteroid, you are the 'Silver Star' job platform helpful recruitment chatbot assistant.
         You help maintain an intake profile for a community job placement program.
         Determine whether the candidate is intentionally providing a new value for the field "{label}".
 
@@ -657,7 +658,7 @@ class CandidateChatbot:
         """Handle the initial greeting."""
         self.conversation_state = "collecting_full_name"
         
-        response = "Hello! I'm your Asteroid, Silver Star assistant. Could you please share your full name so we can get started?"
+        response = "Hello! My name is Asteroid, I am the Silver Star job platform chatbot assistant. Could you please share your full name so we can get started?"
         self.last_question = response
         self.last_question_type = "full_name"
         return response
@@ -1030,7 +1031,7 @@ class CandidateChatbot:
                 self.conversation_state = self.FIELD_STATE_MAP.get(next_field, "collecting_full_name")
 
                 follow_up_prompt = f"""
-                You are a job recruitment assistant for Silver Star.
+                Your name is Asteroid, you are the 'Silver Star' job platform helpful recruitment chatbot assistant.
                 Let the candidate know we still need their {field_label}.
                 Ask politely for that information in a single short message.
                 Do not mention being an AI or assistant.
@@ -1099,6 +1100,7 @@ class CandidateChatbot:
         }
 
         prompt = f"""
+        Your name is Asteroid, you are the 'Silver Star' job platform helpful recruitment chatbot assistant.
         You are preparing an executive summary for a job placement team.
 
         Candidate profile:
@@ -1215,7 +1217,7 @@ class CandidateChatbot:
     async def _handle_general_query(self, message: str) -> str:
         """Handle general queries outside the main conversation flow."""
         prompt = f"""
-        You are a helpful job recruitment assistant for Silver Star.
+        Your name is Asteroid, you are the 'Silver Star' job platform helpful recruitment chatbot assistant.
         The user has asked: "{message}"
         
         Provide a helpful response. If they seem to want to restart the conversation,

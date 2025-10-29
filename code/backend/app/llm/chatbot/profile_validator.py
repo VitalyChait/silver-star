@@ -49,6 +49,7 @@ class ProfileValidationService:
             )
 
             validation_prompt = f"""
+            Your name is Asteroid, you are the 'Silver Star' job platform helpful recruitment chatbot assistant.
             You are validating a candidate intake form for a community job placement program.
             Review the profile below and determine if it contains meaningful information for each field.
 
