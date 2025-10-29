@@ -9,7 +9,9 @@ echo "=========================================="
 echo "SilverStar Application Setup and Run"
 echo "=========================================="
 
-SCRIPT_DIR=$(pwd)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd "$SCRIPT_DIR" && pwd)"
+REPO_DIR="$(dirname SCRIPT_DIR)"
+LOG_DIR="$REPO_DIR/logs"
 
 # Function to print colored output
 print_status() {
@@ -25,7 +27,6 @@ print_error() {
 }
 
 # Ensure logs directory exists early
-LOG_DIR="$SCRIPT_DIR/logs"
 mkdir -p "$LOG_DIR"
 BACKEND_LOG_FILE="$LOG_DIR/backend.log"
 FRONTEND_LOG_FILE="$LOG_DIR/frontend.log"
@@ -129,10 +130,14 @@ run_chatbot_sanity_check() {
 }
 
 # Check if we're in the right directory
-if [ ! -f "$SCRIPT_DIR/code/backend/start_server.py" ]; then
+if [ ! -f "$REPO_DIR/code/backend/start_server.py" ]; then
     print_error "Please run this script from the silver-star root directory"
     exit 1
 fi
+
+# Step 0: Install required system packages (Ubuntu/Debian)
+print_status "Step 0: Installing system packages (apt)..."
+bash "$SCRIPT_DIR/install_ubuntu_dependencies.sh"
 
 # Clean up any existing processes
 print_status "Cleaning up any existing processes..."
@@ -141,7 +146,7 @@ pkill -f "python -m http.server" 2>/dev/null || true
 
 # Step 1: Install dependencies
 print_status "Step 1: Installing Python dependencies with uv..."
-cd "$SCRIPT_DIR/code/backend"
+cd "$REPO_DIR/code/backend"
 
 # Ensure uv is installed
 if ! command -v uv >/dev/null 2>&1; then
@@ -213,7 +218,7 @@ print_success "Database initialized with sample jobs"
 
 # Step 4: Remove unnecessary script files
 print_status "Step 4: Cleaning up unnecessary script files..."
-cd "$SCRIPT_DIR"
+cd "$REPO_DIR"
 
 # Remove individual run scripts since we now have a comprehensive one
 if [ -f "run_me.sh" ]; then
@@ -240,7 +245,7 @@ lsof -ti:3000 | xargs kill -9 2>/dev/null || true
 
 # Start the backend server
 print_status "Starting backend server..."
-cd "$SCRIPT_DIR/code/backend"
+cd "$REPO_DIR/code/backend"
 uv run python start_server.py &
 BACKEND_PID=$!
 
@@ -249,10 +254,10 @@ sleep 3
 
 # Start a simple HTTP server for the frontend
 print_status "Starting frontend server..."
-cd "$SCRIPT_DIR/code/frontend"
+cd "$REPO_DIR/code/frontend"
 ( uv run python -m http.server 3000 2>&1 | tee -a "$FRONTEND_LOG_FILE" ) &
 FRONTEND_PID=$!
-cd "$SCRIPT_DIR"
+cd "$REPO_DIR"
 
 print_status "Waiting for services before running chatbot sanity check..."
 sleep 5

@@ -78,22 +78,4 @@ echo "[SUCCESS] System packages installed. Summary:"
 printf "  - Core: %s\n" "${CORE_PKGS[*]}"
 printf "  - Audio: %s\n" "${AUDIO_PKGS[*]}"
 
-cat <<'NOTE'
-
-Next steps:
-1) Install uv (if not installed):
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-
-2) Sync Python deps from backend:
-   cd code/backend
-   uv sync
-
-3) Optional quick checks:
-   - espeak-ng --version        # Verify TTS engine is available
-   - python3 -c "import pygame; print('pygame ok')" || true
-
-If audio playback fails in headless or container environments, ensure an ALSA/Pulse backend
-is available or run with appropriate audio device bindings.
-
-NOTE
 
