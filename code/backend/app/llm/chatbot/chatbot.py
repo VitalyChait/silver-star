@@ -110,6 +110,110 @@ class CandidateChatbot:
         self.enable_audio = enable_audio  # Whether to play audio responses
         self.retry_counts: Dict[str, int] = {}
 
+    def _next_missing_field(self) -> Optional[str]:
+        for key in self.FIELD_KEYS:
+            if not self.candidate_info.get(key):
+                return key
+        return None
+
+    async def _auto_extract_all(self, message: str) -> None:
+        """Attempt to extract any missing fields from a single user message.
+
+        Only fills fields that are currently empty to avoid overwriting.
+        """
+        if not message:
+            return
+        schema = {
+            "full_name": "string",
+            "location": "string",
+            "age": "string",
+            "physical_condition": "string",
+            "interests": "string",
+            "limitations": "string",
+        }
+        try:
+            prompt = (
+                "Extract any of the following that the person clearly provided in the text. "
+                "Return null for items not present."
+                f" Text: {message}"
+            )
+            data = await llm_service.extract_structured_data(prompt, schema, self.conversation_history)
+        except Exception:
+            data = {}
+
+        # Heuristics first for name/location/condition/limits/interests
+        if not self.candidate_info.get("full_name"):
+            name_inline = self._detect_full_name_from_message(message)
+            if name_inline:
+                self.candidate_info["full_name"] = name_inline
+        if not self.candidate_info.get("location"):
+            loc_inline = self._detect_location_from_message(message)
+            if loc_inline:
+                self.candidate_info["location"] = loc_inline
+        if not self.candidate_info.get("physical_condition"):
+            cond_inline = self._detect_physical_condition_from_message(message)
+            if cond_inline:
+                self.candidate_info["physical_condition"] = cond_inline
+        if not self.candidate_info.get("interests"):
+            interests_inline = self._detect_interests_from_message(message)
+            if interests_inline:
+                self.candidate_info["interests"] = interests_inline
+        if not self.candidate_info.get("limitations"):
+            limits_inline = self._detect_limitations_from_message(message)
+            if limits_inline:
+                self.candidate_info["limitations"] = limits_inline
+
+        # LLM extraction fallback for anything still missing
+        try:
+            if not self.candidate_info.get("full_name") and data.get("full_name"):
+                self.candidate_info["full_name"] = str(data.get("full_name")).strip()
+            if not self.candidate_info.get("location") and data.get("location"):
+                self.candidate_info["location"] = str(data.get("location")).strip()
+            if not self.candidate_info.get("age") and data.get("age"):
+                # normalize age to number string
+                digits = re.findall(r"\d{1,3}", str(data.get("age")))
+                if digits:
+                    try:
+                        age_int = int(digits[0])
+                        if 10 <= age_int <= 120:
+                            self.candidate_info["age"] = str(age_int)
+                    except ValueError:
+                        pass
+            if not self.candidate_info.get("physical_condition") and data.get("physical_condition"):
+                self.candidate_info["physical_condition"] = str(data.get("physical_condition")).strip()
+            if not self.candidate_info.get("interests") and data.get("interests"):
+                self.candidate_info["interests"] = str(data.get("interests")).strip()
+            if not self.candidate_info.get("limitations") and data.get("limitations"):
+                self.candidate_info["limitations"] = self._normalize_limitations(str(data.get("limitations")).strip())
+        except Exception:
+            pass
+
+    def _advance_state_if_filled(self):
+        """Advance the conversation state past fields that are already filled."""
+        mapping = [
+            ("collecting_full_name", "full_name"),
+            ("collecting_location", "location"),
+            ("collecting_age", "age"),
+            ("collecting_physical_condition", "physical_condition"),
+            ("collecting_interests", "interests"),
+            ("collecting_limitations", "limitations"),
+        ]
+        # Iterate at most length of mapping to prevent infinite loops
+        for _ in range(len(mapping)):
+            progressed = False
+            for state, field in mapping:
+                if self.conversation_state == state and self.candidate_info.get(field):
+                    # Move to next logical state
+                    idx = [s for s, _ in mapping].index(state)
+                    if idx + 1 < len(mapping):
+                        self.conversation_state = mapping[idx + 1][0]
+                    else:
+                        self.conversation_state = "validating_profile"
+                    progressed = True
+                    break
+            if not progressed:
+                break
+
     def seed_profile(self, profile: Dict[str, Any]) -> None:
         """Seed the chatbot with a pre-existing user profile and move to confirmation state.
 
@@ -389,6 +493,11 @@ class CandidateChatbot:
             name_mentioned = "name" in message.lower()
             if inline_name != current_name and (self.conversation_state in {"collecting_full_name"} or name_mentioned or not current_name):
                 self.candidate_info["full_name"] = inline_name
+
+        # Try to auto-fill any missing fields from this message
+        await self._auto_extract_all(message)
+        # Advance state if the currently awaited field is already filled
+        self._advance_state_if_filled()
 
         # Process based on current conversation state
         if self.conversation_state == "greeting":
