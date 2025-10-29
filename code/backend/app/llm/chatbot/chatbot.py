@@ -464,7 +464,24 @@ class CandidateChatbot:
 
     async def _confirm_profile(self, message: str) -> str:
         """Handle the profile confirmation flow."""
-        # If we haven't asked yet, present the summary and ask for confirmation
+        # Before asking for confirmation, check what we actually have
+        missing = [key for key in self.FIELD_KEYS if not self.candidate_info.get(key)]
+
+        # If nothing is filled in, skip confirmation and start collecting from the top
+        if len(missing) == len(self.FIELD_KEYS):
+            self.conversation_state = "collecting_full_name"
+            response = "Let's get started. Could you please share your full name?"
+            self.last_question = response
+            self.last_question_type = "full_name"
+            return response
+
+        # If some fields are missing but not all, ask only for the next missing field
+        if missing:
+            next_field = missing[0]
+            self.conversation_state = self.FIELD_STATE_MAP.get(next_field, "collecting_full_name")
+            return await self._ask_for_field(next_field)
+
+        # If we have all fields, proceed to validation/summary as usual
         if self.last_question_type != "confirm_profile":
             summary = self._profile_summary_snippet()
             prompt = (
