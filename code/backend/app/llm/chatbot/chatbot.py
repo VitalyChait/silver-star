@@ -1174,12 +1174,14 @@ class CandidateChatbot:
                         )
                         
                         if job_details:
-                            recommendation_text += f"{i}. **{job_details['title']}** at {job_details['company'] or 'A great company'}\n"
+                            recommendation_text += f"{i}. {job_details['title']} at {job_details['company'] or 'A great company'}\n"
                             recommendation_text += f"   Location: {job_details['location'] or 'Various locations'}\n"
                             recommendation_text += f"   Match Score: {rec['match_score']}%\n"
                             recommendation_text += f"   Why it's a good fit: {rec['match_reason']}\n\n"
                     
-                    recommendation_text += "Would you like more details about any of these positions, or would you like to see more recommendations?"
+                    recommendation_text = "\n===BEGIN_RECS===\n" + recommendation_text
+                    recommendation_text += "Would you like more details about any of these positions, or would you like to see more recommendations?\n"
+                    recommendation_text += "===END_RECS===\n"
                     
                     return recommendation_text
                 else:
@@ -1207,7 +1209,9 @@ class CandidateChatbot:
                 Format your response in a friendly, conversational way.
                 """
                 
-                return await llm_service.generate_response(prompt)
+                text = await llm_service.generate_response(prompt)
+                # Wrap fallback block so UI preserves newlines nicely
+                return "\n===BEGIN_RECS===\n" + text + "\n===END_RECS===\n"
         except Exception as e:
             logger.error(f"Error generating job recommendations: {str(e)}")
             

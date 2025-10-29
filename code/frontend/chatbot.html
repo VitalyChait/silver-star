@@ -1258,6 +1258,32 @@
                 }
             }
 
+            function renderResponseWithPreservedBlocks(rawText) {
+                const blocks = [];
+                const regex = /===BEGIN_RECS===([\s\S]*?)===END_RECS===/g;
+                let lastIndex = 0;
+                let match;
+                while ((match = regex.exec(rawText)) !== null) {
+                    const start = match.index;
+                    const end = regex.lastIndex;
+                    const before = rawText.slice(lastIndex, start);
+                    if (before.trim()) {
+                        const filtered = filterBotResponse(before);
+                        if (filtered.html) addBotMessage(filtered.html, { isHtml: true });
+                    }
+                    const preserved = match[1];
+                    // Break large block into smaller chat messages by paragraph
+                    const chunks = preserved.split(/\n\n+/).map(s => s.trim()).filter(Boolean);
+                    chunks.forEach(chunk => addBotMessage(chunk));
+                    lastIndex = end;
+                }
+                const tail = rawText.slice(lastIndex);
+                if (tail.trim()) {
+                    const filteredTail = filterBotResponse(tail);
+                    if (filteredTail.html) addBotMessage(filteredTail.html, { isHtml: true });
+                }
+            }
+
             async function sendChatMessage(message, options = {}) {
                 const { showUserMessage = true } = options;
                 const trimmedMessage = (message || '').trim();
@@ -1294,9 +1320,13 @@
                     const data = await response.json();
                     
                     const improvedText = prettifyExecutiveSummaryBlocks(data.response);
-                    const filteredResponse = filterBotResponse(improvedText);
-                    if (filteredResponse.html) {
-                        addBotMessage(filteredResponse.html, { isHtml: true });
+                    if (/===BEGIN_RECS===/.test(improvedText)) {
+                        renderResponseWithPreservedBlocks(improvedText);
+                    } else {
+                        const filteredResponse = filterBotResponse(improvedText);
+                        if (filteredResponse.html) {
+                            addBotMessage(filteredResponse.html, { isHtml: true });
+                        }
                     }
                     conversationId = data.conversation_id;
                     
