@@ -10,65 +10,15 @@ SilverStar is a job application platform that connects experienced professionals
 - Job scraping from USAJOBS
 - Modern, responsive UI with custom star cursor
 
-## Quick Start (uv)
+## Quick Start
 
-We use the uv Python environment manager for dependency management and running commands.
+### Configure environment variables
+cp ../env_example .env
+#### Edit .env with your actual API keys and provider details
 
-First, install uv if you don't have it:
+### Run scripts/setup_and_run.sh
+##### You will be asked if you want to initialize the database 
 
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-Then use the automated setup script:
-
-```bash
-# Clone the repository
-git clone <repository-url>
-cd silver-star
-
-# Run the setup and start script (uses uv)
-./setup_and_run.sh
-```
-
-This single script will:
-1. Install all Python dependencies
-2. Set up the LLM configuration file
-3. Initialize the database with sample jobs
-4. Start both the backend and frontend servers
-5. Clean up any unnecessary files
-
-## Manual Setup (uv)
-
-If you prefer to set up manually with uv:
-
-### 1. Backend Setup
-
-```bash
-cd code/backend
-
-# Install dependencies from pyproject.toml
-uv sync
-
-# Configure environment variables
-cp ../env_example ../.env
-# Edit ../.env with your actual API keys and provider details
-
-# Initialize database
-uv run python populate_jobs.py
-
-# Start the server
-uv run python start_server.py
-```
-
-### 2. Frontend
-
-The frontend consists of static HTML files that can be served by any web server. To run a simple server:
-
-```bash
-cd code/frontend
-uv run python -m http.server 3000
-```
 
 ## Accessing the Application
 
@@ -77,32 +27,3 @@ Once running, you can access:
 - Main page: http://localhost:3000/silverstar.html
 - Chatbot: http://localhost:3000/chatbot.html
 - API documentation: http://localhost:8000/docs
-
-## Configuration
-
-### LLM Configuration
-
-The application uses environment variables (loaded from `code/.env`) to configure LLM access:
-
-1. Copy `code/env_example` to `code/.env`
-2. Get an API key from [Google AI Studio](https://aistudio.google.com/app/apikey)
-3. Update `code/.env` with your actual credentials and provider settings
-
-### Database
-
-The application uses SQLite by default, with the database file stored at `code/backend/data.db`. The database is automatically initialized with sample jobs on first run.
-
-## Architecture
-
-- **Backend**: FastAPI with SQLAlchemy ORM
-- **Frontend**: Vanilla HTML, CSS, and JavaScript
-- **AI Integration**: Google Gemini API
-- **Job Scraping**: USAJOBS API
-
-## Development
-
-The backend server supports hot reloading during development. Changes to Python files will automatically restart the server.
-
-## License
-
-This project is licensed under the terms specified in the [LICENSE](LICENSE) file.
