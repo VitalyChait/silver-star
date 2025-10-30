@@ -382,10 +382,25 @@ class LLMService:
         try:
             # Handle response wrapped in markdown code blocks and trailing prose
             cleaned = strip_json_code_fences(response)
+        except Exception as e:
+            logger.error(f"[service.py] Failed to strip_json_code_fences JSON response: {response} - {e}")
+            log_event(
+                agent_role,
+                {
+                    "event": "parse_error",
+                    "backend": "unknown",
+                    "text": response,
+                    "message": "Failed to parse JSON response",
+                },
+            )
+            # Return empty structure with the same schema
+            return {key: None for key in schema.keys()}
+
+        try:
             payload = extract_first_json_block(cleaned) or cleaned
             return json.loads(payload)
-        except json.JSONDecodeError:
-            logger.error(f"[service.py] Failed to parse JSON response: {response}")
+        except:
+            logger.error(f"[service.py] Failed to extract_first_json_block JSON response: {response} - {e}")
             log_event(
                 agent_role,
                 {

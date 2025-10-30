@@ -150,23 +150,29 @@ class JobRecommendationService:
                 max_output_tokens=900 * int(os.getenv("TOKENS_MULT")),
                 agent_role="recommendations",
             )
-            
+        except Exception as e:
+            logger.error(f"[recommendations.py] Error generating recommendations with LLM: {str(e)}")
+            return []
+
+        try:
             # Parse the JSON response
-            recommendations = json.loads(strip_json_code_fences(response))
-            
+            stripped_response = strip_json_code_fences(response)
+        except Exception as e:
+            logger.error(f"[recommendations.py] Error response strip_json_code_fences: {str(e)}")
+            logger.error(f"[recommendations.py] LLM response: {response}")
+            return []
+
+        try:
+            recommendations = json.loads(stripped_response)
             # Ensure we have a list
             if not isinstance(recommendations, list):
                 logger.error("[recommendations.py] LLM response is not a list")
                 return []
-            
             # Limit the number of recommendations
             return recommendations[:limit]
-        except json.JSONDecodeError as e:
-            logger.error(f"[recommendations.py] Failed to parse LLM response as JSON: {str(e)}")
-            logger.error(f"[recommendations.py] LLM response: {response}")
-            return []
         except Exception as e:
-            logger.error(f"[recommendations.py] Error generating recommendations with LLM: {str(e)}")
+            logger.error(f"[recommendations.py] Failed to parse LLM response as JSON: {str(e)}")
+            logger.error(f"[recommendations.py] LLM stripped_response: {stripped_response}")
             return []
     
     async def get_job_details_for_recommendation(

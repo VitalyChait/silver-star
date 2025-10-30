@@ -435,6 +435,10 @@ class CandidateChatbot:
             r"\bprefer\s+(?:no|not)\s+remote\b",
             r"\b(?:in\s*person|on-?site|onsite)\s+only\b",
             r"\b(?:do\s+not|don't)\s+want\s+to\s+work\s+remotely\b",
+            r"\b(?:do\s+not|don't)\s+want\s+to\s+work\s+on\s+the\s+computer\b",
+            r"\b(?:no|not)\s+(?:computer\s+work|working\s+on\s+the\s+computer)\b",
+            r"\b(?:do\s+not|don't)\s+want\s+(?:a|any)?\s*remote\s+job\b",
+            r"\bno\s+remote\s+jobs?\b",
             r"\b(?:cannot|can't|do\s+not\s+want\s+to)\s+lift\s+\d+\s*(?:lbs|pounds)?\b",
             r"\bprefer\s+to\s+avoid\s+([^.!?]{2,120})",
             r"\b(?:do\s+not|don't)\s+want\s+to\s+drive\s+(?:to\s+work\s+)?for\s+more\s+than\s+\d+\s*(?:hours?|hrs?)\b",
@@ -1412,6 +1416,11 @@ class CandidateChatbot:
         recommendations = await self._recommend_jobs()
         if recommendations:
             message_parts.append(recommendations)
+        if not message_parts:
+            # Fallback: ensure we always respond with something useful
+            snapshot = self._profile_summary_snippet()
+            message_parts.append(f"I've recorded your details: {snapshot}.")
+            message_parts.append("Would you like me to generate job suggestions now?")
         message_parts.append(
             "I've saved these details. If anything looks off, please edit it directly in the profile panel or tell me what to change."
         )
