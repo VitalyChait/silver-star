@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 import google.generativeai as genai
 from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
-from .utils import strip_json_code_fences
+from .utils import strip_json_code_fences, extract_first_json_block
 from .llm_logger import log_event, ensure_log_dir
 
 try:
@@ -380,9 +380,10 @@ class LLMService:
         )
         
         try:
-            # Handle response wrapped in markdown code blocks
+            # Handle response wrapped in markdown code blocks and trailing prose
             cleaned = strip_json_code_fences(response)
-            return json.loads(cleaned)
+            payload = extract_first_json_block(cleaned) or cleaned
+            return json.loads(payload)
         except json.JSONDecodeError:
             logger.error(f"[service.py] Failed to parse JSON response: {response}")
             log_event(

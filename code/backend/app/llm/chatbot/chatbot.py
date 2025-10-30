@@ -1367,7 +1367,7 @@ class CandidateChatbot:
                 Do not mention being an AI or assistant.
                 """
 
-                response = await llm_service.generate_response(follow_up_prompt)
+                response = await llm_service.generate_response(follow_up_prompt, agent_role="chatbot")
                 self.last_question = response
                 self.last_question_type = self.FIELD_TYPE_MAP.get(next_field, next_field)
                 return response
@@ -1386,7 +1386,7 @@ class CandidateChatbot:
             Craft a concise, friendly summary of this candidate profile for Silver Star:
             {profile_snapshot}
             """
-            summary = await llm_service.generate_response(summary_prompt)
+            summary = await llm_service.generate_response(summary_prompt, agent_role="chatbot")
 
         message_parts = []
         if issues:
@@ -1543,7 +1543,7 @@ class CandidateChatbot:
                 Format your response in a friendly, conversational way.
                 """
                 
-                text = await llm_service.generate_response(prompt)
+                text = await llm_service.generate_response(prompt, agent_role="chatbot")
                 # Wrap fallback block so UI preserves newlines nicely
                 return "\n===BEGIN_RECS===\n" + text + "\n===END_RECS===\n"
         except Exception as e:
@@ -1562,7 +1562,7 @@ class CandidateChatbot:
         suggest starting over by asking for their name again.
         """
         
-        return await llm_service.generate_response(prompt)
+        return await llm_service.generate_response(prompt, agent_role="chatbot")
 
     async def apply_manual_update(self, updates: Dict[str, Any]) -> str:
         """Apply manual profile adjustments and re-validate."""
