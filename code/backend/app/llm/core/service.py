@@ -399,7 +399,7 @@ class LLMService:
         try:
             payload = extract_first_json_block(cleaned) or cleaned
             return json.loads(payload)
-        except:
+        except Exception as e:
             logger.error(f"[service.py] Failed to extract_first_json_block JSON response: {response} - {e}")
             log_event(
                 agent_role,

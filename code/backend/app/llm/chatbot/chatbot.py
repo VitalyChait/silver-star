@@ -579,6 +579,46 @@ class CandidateChatbot:
                     self.conversation_history.append({"role": "assistant", "content": response})
                     return response, self.candidate_info
 
+            # Handle explicit name confirmation flow
+            if self.last_question_type == "confirm_name":
+                norm = (message or "").strip().lower()
+                yes = {"yes", "yep", "yeah", "correct", "right", "ok", "okay"}
+                no = {"no", "nope", "nah", "incorrect", "wrong"}
+                if any(w == norm or norm.startswith(w) for w in yes):
+                    # Name confirmed; proceed to next field
+                    preferred_name = self._preferred_name()
+                    # Decide next step based on whether location already exists
+                    if self.candidate_info.get("location"):
+                        self.conversation_state = "collecting_age"
+                        name_fragment = f", {preferred_name}" if preferred_name else ""
+                        response = f"Great{name_fragment}! To make sure opportunities are appropriate, could you share your age?"
+                        self.last_question = response
+                        self.last_question_type = "age"
+                    else:
+                        self.conversation_state = "collecting_location"
+                        display_name = preferred_name or (self.candidate_info.get("full_name") or "")
+                        response = f"Nice to meet you, {display_name}! Where are you currently located?"
+                        self.last_question = response
+                        self.last_question_type = "location"
+                    self.conversation_history.append({"role": "assistant", "content": response})
+                    if self.enable_audio:
+                        await self._play_response_audio(response)
+                    return response, self.candidate_info
+                elif any(w == norm or norm.startswith(w) for w in no):
+                    # Ask for the correct name
+                    self.conversation_state = "collecting_full_name"
+                    response = "Thanks for clarifying. What is your full name?"
+                    self.last_question = response
+                    self.last_question_type = "full_name"
+                    self.conversation_history.append({"role": "assistant", "content": response})
+                    if self.enable_audio:
+                        await self._play_response_audio(response)
+                    return response, self.candidate_info
+                else:
+                    response = "Please reply yes or no: is that your correct full name?"
+                    self.conversation_history.append({"role": "assistant", "content": response})
+                    return response, self.candidate_info
+
             validation_result = await answer_validator.validate_answer(
                 self.last_question,
                 message,
@@ -947,8 +987,16 @@ class CandidateChatbot:
     
     async def _handle_greeting(self) -> str:
         """Handle the initial greeting."""
+        # If we already have a name on file, confirm it first
+        name = (self.candidate_info.get("full_name") or "").strip() if isinstance(self.candidate_info.get("full_name"), str) else None
+        if name:
+            self.conversation_state = "collecting_full_name"
+            response = f"Hello! I have your full name as '{name}'. Is that correct?"
+            self.last_question = response
+            self.last_question_type = "confirm_name"
+            return response
+        # Otherwise, ask for the user's full name
         self.conversation_state = "collecting_full_name"
-        
         response = "Hello! My name is Asteroid, I am the Silver Star job platform chatbot assistant. Could you please share your full name so we can get started?"
         self.last_question = response
         self.last_question_type = "full_name"

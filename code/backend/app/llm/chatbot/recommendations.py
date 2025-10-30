@@ -14,7 +14,12 @@ except ImportError as e:
     sys.exit(1)
 
 from ..core.service import llm_service
-from ..core.utils import compact_json, compact_jobs, strip_json_code_fences
+from ..core.utils import (
+    compact_json,
+    compact_jobs,
+    strip_json_code_fences,
+    extract_first_json_block,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -155,15 +160,18 @@ class JobRecommendationService:
             return []
 
         try:
-            # Parse the JSON response
-            stripped_response = strip_json_code_fences(response)
-        except Exception as e:
-            logger.error(f"[recommendations.py] Error response strip_json_code_fences: {str(e)}")
-            logger.error(f"[recommendations.py] LLM response: {response}")
-            return []
+            # Extract the first JSON array/object from the response, handling prose and code fences
+            candidate_json = extract_first_json_block(response)
+            if not candidate_json:
+                # Try again after stripping top-level fences if any
+                stripped_response = strip_json_code_fences(response)
+                candidate_json = extract_first_json_block(stripped_response)
+            if not candidate_json:
+                logger.error("[recommendations.py] No JSON block found in LLM response")
+                logger.error(f"[recommendations.py] LLM response preview: {response[:400]}")
+                return []
 
-        try:
-            recommendations = json.loads(stripped_response)
+            recommendations = json.loads(candidate_json)
             # Ensure we have a list
             if not isinstance(recommendations, list):
                 logger.error("[recommendations.py] LLM response is not a list")
@@ -172,7 +180,7 @@ class JobRecommendationService:
             return recommendations[:limit]
         except Exception as e:
             logger.error(f"[recommendations.py] Failed to parse LLM response as JSON: {str(e)}")
-            logger.error(f"[recommendations.py] LLM stripped_response: {stripped_response}")
+            logger.error(f"[recommendations.py] LLM response: {response}")
             return []
     
     async def get_job_details_for_recommendation(

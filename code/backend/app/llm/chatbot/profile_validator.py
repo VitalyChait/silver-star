@@ -4,7 +4,7 @@ import os
 from typing import Any, Dict, List
 
 from ..core.service import llm_service
-from ..core.utils import compact_json, strip_json_code_fences
+from ..core.utils import compact_json, strip_json_code_fences, extract_first_json_block
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +77,10 @@ class ProfileValidationService:
                 agent_role="profile_validator",
             )
 
-            llm_result = json.loads(strip_json_code_fences(llm_response))
+            # Be lenient: handle prose-wrapped JSON and fenced blocks
+            cleaned = strip_json_code_fences(llm_response)
+            payload = extract_first_json_block(cleaned) or cleaned
+            llm_result = json.loads(payload)
 
             for key in result:
                 if key in llm_result and llm_result[key] is not None:

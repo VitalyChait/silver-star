@@ -11,12 +11,24 @@ def _enabled() -> bool:
 
 
 def _repo_root() -> Path:
-    # Find the repository root by walking up until we see a marker like .git or README.md
+    """Locate the repo root preferring a directory that contains .git.
+
+    If .git isn't found, use the highest ancestor containing a README.md.
+    Fallback to CWD.
+    """
     here = Path(__file__).resolve()
-    for parent in [here.parent] + list(here.parents):
-        if (parent / ".git").exists() or (parent / "README.md").exists():
+    parents = [here.parent] + list(here.parents)
+    # Prefer the first directory up the chain that has a .git folder
+    for parent in parents:
+        if (parent / ".git").exists():
             return parent
-    # Fallback to current working directory
+    # Otherwise choose the topmost README.md holder
+    readme_holder: Path | None = None
+    for parent in parents:
+        if (parent / "README.md").exists():
+            readme_holder = parent
+    if readme_holder is not None:
+        return readme_holder
     return Path.cwd()
 
 
