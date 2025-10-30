@@ -630,6 +630,15 @@
                 return false;
             }
 
+            function detectSimpleCorrection(field, value) {
+                if (!value || typeof value !== 'string') return null;
+                if (field === 'physical_condition') {
+                    const corrected = value.replace(/\b[hg]o\s+health\b/gi, 'no health');
+                    if (corrected !== value) return corrected;
+                }
+                return null;
+            }
+
             function extractProfileInfoFromMessage(message) {
                 const updates = [];
                 if (!message || typeof message !== 'string') {
@@ -640,6 +649,8 @@
                 if (!workingMessage) {
                     return updates;
                 }
+
+                const sentences = workingMessage.split(/[.!?]+\s+/);
 
                 if (/name/i.test(workingMessage)) {
                     const correctionMatches = [...workingMessage.matchAll(/(?:it\s*(?:'s| is)\s+)([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)+)/gi)];
@@ -671,24 +682,29 @@
                 }
 
                 const locationPatterns = [
-                    /(?:\bi (?:am|i'm|currently am|currently i'm|live|currently live|reside|stay)\s*(?:currently\s*)?(?:in|at)\s+)([^.?!]+)/i,
+                    /(?:\bi (?:am|i'm|currently am|currently i'm|live|currently live|reside|stay|am located|am based)\s*(?:currently\s*)?(?:in|at)\s+)([^.?!]+)/i,
                     /(?:\bi(?:'m)?\s*based in\s+)([^.?!]+)/i,
                     /(?:\bi (?:hail from|come from|am from|i'm from)\s+)([^.?!]+)/i
                 ];
-
-                for (const pattern of locationPatterns) {
-                    const match = workingMessage.match(pattern);
-                    if (match && match[1]) {
-                        const proposed = finalizeCapturedValue(match[1]);
-                        if (proposed && proposed.length >= 3 && proposed.length <= 80 && /[a-zA-Z]/.test(proposed)) {
-                            updates.push({ field: 'location', value: proposed });
-                            break;
+                const locationExclusions = /(health|condition|issues?|interests?|limitations?|remote|computer|drive|driving|teacher|wood)/i;
+                for (const s of sentences) {
+                    for (const pattern of locationPatterns) {
+                        const match = s.match(pattern);
+                        if (match && match[1]) {
+                            const proposed = finalizeCapturedValue(match[1]);
+                            if (!proposed || locationExclusions.test(proposed)) continue;
+                            if (proposed.length >= 3 && proposed.length <= 80 && /[a-zA-Z]/.test(proposed)) {
+                                updates.push({ field: 'location', value: proposed });
+                                pattern.lastIndex = 0;
+                                break;
+                            }
                         }
                     }
+                    if (updates.some(u => u.field === 'location')) break;
                 }
 
                 const ageRegex = /(?:\b(?:my age is|i am|i'm)\s+)(\d{1,3})(?:\s*(?:years old|yrs old|yrs|years|y\/o|yo))?\b/i;
-                const ageMatch = workingMessage.match(ageRegex);
+            const ageMatch = workingMessage.match(ageRegex);
                 if (ageMatch) {
                     const ageNum = parseInt(ageMatch[1], 10);
                     if (!Number.isNaN(ageNum) && ageNum >= 14 && ageNum <= 100) {
@@ -813,7 +829,15 @@
                     if (!currentValue.trim()) {
                         applyDraftUpdate(field, value);
                         const label = fieldLabels[field] || field;
-                        addBotMessage(`Noted your ${label} as "${value}".`);
+                        // Inline correction suggestion if obvious
+                        const suggestion = detectSimpleCorrection(field, value);
+                        if (suggestion && suggestion !== value) {
+                            addBotMessage(`Noted your ${label} as "${value}".\nDid you mean "${suggestion}"?`);
+                            // stage a pending edit without auto-prompting again
+                            activePendingEdit = { field, newValue: suggestion, previousValue: value };
+                        } else {
+                            addBotMessage(`Noted your ${label} as "${value}".`);
+                        }
                         continue;
                     }
 
