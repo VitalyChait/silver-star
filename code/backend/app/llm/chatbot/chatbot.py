@@ -54,6 +54,7 @@ class CandidateChatbot:
         "physical_condition": "physical condition",
         "interests": "areas of interest",
         "limitations": "limitations",
+        "confirm_profile": "confirmation",
     }
     NON_NAME_TOKENS = {
         "hi",
@@ -114,6 +115,7 @@ class CandidateChatbot:
         self.retry_counts: Dict[str, int] = {}
         self._pending_correction: Optional[Dict[str, str]] = None
         self._last_geo_lookup_ts: float = 0.0
+        self._profile_confirmed: bool = False
 
     def _next_missing_field(self) -> Optional[str]:
         for key in self.FIELD_KEYS:
@@ -143,7 +145,9 @@ class CandidateChatbot:
                 "Return null for items not present."
                 f" Text: {message}"
             )
-            data = await llm_service.extract_structured_data(prompt, schema, self.conversation_history)
+            data = await llm_service.extract_structured_data(
+                prompt, schema, self.conversation_history, agent_role="chatbot"
+            )
         except Exception:
             data = {}
 
@@ -433,6 +437,8 @@ class CandidateChatbot:
             r"\b(?:do\s+not|don't)\s+want\s+to\s+work\s+remotely\b",
             r"\b(?:cannot|can't|do\s+not\s+want\s+to)\s+lift\s+\d+\s*(?:lbs|pounds)?\b",
             r"\bprefer\s+to\s+avoid\s+([^.!?]{2,120})",
+            r"\b(?:do\s+not|don't)\s+want\s+to\s+drive\s+(?:to\s+work\s+)?for\s+more\s+than\s+\d+\s*(?:hours?|hrs?)\b",
+            r"\b(?:commute|driv(?:e|ing))\s+(?:over|more\s+than)\s+\d+\s*(?:hours?|hrs?)\b",
         ]
         for pat in patterns:
             m = re.search(pat, message, re.IGNORECASE)
@@ -441,6 +447,16 @@ class CandidateChatbot:
                 norm = CandidateChatbot._normalize_limitations(val)
                 return norm
         return None
+
+    def _wants_jobs_now(self, text: str) -> bool:
+        if not text:
+            return False
+        t = text.lower()
+        keywords = [
+            "jobs", "positions", "openings", "opportunities",
+            "offer me jobs", "find jobs", "show jobs", "recommend jobs",
+        ]
+        return any(k in t for k in keywords)
     
     def _conversation_snippet(self, turns: int = 6) -> str:
         """Return the last few conversation turns formatted for prompts."""
@@ -588,6 +604,17 @@ class CandidateChatbot:
                     return await self._validate_profile(), self.candidate_info
 
                 if self.retry_counts[qtype] >= 2:
+                    if qtype == "confirm_profile":
+                        # Provide a clear summary for confirmation instead of a generic ask
+                        summary = self._profile_summary_snippet()
+                        response = (
+                            f"Let's confirm your details: {summary}. Is everything correct? You can say 'yes' or 'no'."
+                        )
+                        self.conversation_history.append({"role": "assistant", "content": response})
+                        if self.enable_audio:
+                            await self._play_response_audio(response)
+                        self.last_question = response
+                        return response, self.candidate_info
                     label = self.FIELD_LABEL_MAP.get(qtype, qtype.replace("_", " "))
                     examples = {
                         "full_name": "e.g., 'Jane Doe'",
@@ -603,8 +630,11 @@ class CandidateChatbot:
                     )
                 else:
                     # Re-ask simply without LLM to avoid repetition loops
-                    label = self.FIELD_LABEL_MAP.get(self.last_question_type, self.last_question_type)
-                    response = f"Could you please share your {label}?"
+                    if self.last_question_type == "confirm_profile":
+                        response = "Could you please share your confirmation for your details overview?"
+                    else:
+                        label = self.FIELD_LABEL_MAP.get(self.last_question_type, self.last_question_type)
+                        response = f"Could you please share your {label}?"
 
                 self.conversation_history.append({"role": "assistant", "content": response})
                 if self.enable_audio:
@@ -673,33 +703,24 @@ class CandidateChatbot:
             response = await self._handle_general_query(message)
         elif self.conversation_state == "validating_profile":
             response = await self._validate_profile()
-        elif self.conversation_state == "awaiting_recommendation_consent":
-            # Ask user if they want job positions generated now
-            normalized = (message or "").strip().lower()
-            yes = {"yes", "yep", "yeah", "sure", "please", "ok", "okay", "go ahead", "do it", "generate", "yes please"}
-            no = {"no", "nope", "nah", "not now", "later", "skip"}
-            if any(normalized.startswith(tok) for tok in yes):
-                self.conversation_state = "recommending_jobs"
-                response = await self._recommend_jobs()
-                # After sending recs, mark profile complete
-                self.conversation_state = "profile_complete"
-                self.last_question = None
-                self.last_question_type = None
-            elif any(normalized.startswith(tok) for tok in no):
-                response = "No problem — we can generate job matches whenever you're ready."
-                self.conversation_state = "profile_complete"
-                self.last_question = None
-                self.last_question_type = None
-            else:
-                response = "Would you like me to generate job positions now?"
-                self.last_question = response
-                self.last_question_type = "recommendations_consent"
         elif self.conversation_state == "recommending_jobs":
             response = await self._recommend_jobs()
         else:
-            response = await self._handle_general_query(message)
+            # If the user asks for jobs directly and we have enough info, jump to recommendations
+            if self._wants_jobs_now(message) and (self.candidate_info.get("location") or self.candidate_info.get("interests")):
+                self.conversation_state = "recommending_jobs"
+                response = await self._recommend_jobs()
+            else:
+                response = await self._handle_general_query(message)
         
-        # Add bot response to history
+        # Add bot response to history and ensure it ends with a CTA or question
+        try:
+            r = (response or "").rstrip()
+            if "?" not in r:
+                r = r + "\nWhat would you like to do next?"
+            response = r
+        except Exception:
+            pass
         self.conversation_history.append({"role": "assistant", "content": response})
         
         # Play the response as audio if enabled
@@ -751,7 +772,8 @@ class CandidateChatbot:
             decision = await llm_service.extract_structured_data(
                 prompt,
                 schema,
-                self.conversation_history
+                self.conversation_history,
+                agent_role="chatbot"
             )
         except Exception as exc:  # pylint: disable=broad-except
             logger.error("[chatbot.py] LLM judge failed: %s", exc)
@@ -843,8 +865,11 @@ class CandidateChatbot:
         if not normalized:
             return "Could you confirm if your profile details are correct, or tell me what to update?"
 
-        affirmative = {"yes", "yep", "yeah", "correct", "all good", "looks good", "good", "ok", "okay"}
-        negative = {"no", "nope", "not quite", "update", "change", "edit"}
+        affirmative = {
+            "yes", "yep", "yeah", "correct", "all good", "looks good", "good", "ok", "okay",
+            "confirm", "i confirm", "confirmed", "that is correct", "that's correct"
+        }
+        negative = {"no", "nope", "not quite", "update", "change", "edit", "fix", "modify"}
 
         if any(word in normalized for word in affirmative):
             # Proceed to validation to fill any gaps, else move to profile_complete
@@ -968,7 +993,7 @@ class CandidateChatbot:
             """
 
             extracted = await llm_service.extract_structured_data(
-                extraction_prompt, schema, self.conversation_history
+                extraction_prompt, schema, self.conversation_history, agent_role="chatbot"
             )
 
             candidate_name = extracted.get("full_name") if extracted else None
@@ -1040,7 +1065,7 @@ class CandidateChatbot:
                 """
                 
                 extracted = await llm_service.extract_structured_data(
-                    extraction_prompt, schema, self.conversation_history
+                    extraction_prompt, schema, self.conversation_history, agent_role="chatbot"
                 )
                 
                 if extracted.get("location"):
@@ -1120,7 +1145,7 @@ class CandidateChatbot:
                 """
 
                 extracted = await llm_service.extract_structured_data(
-                    extraction_prompt, schema, self.conversation_history
+                    extraction_prompt, schema, self.conversation_history, agent_role="chatbot"
                 )
 
                 age_value = normalize_age(extracted.get("age") if extracted else None)
@@ -1166,7 +1191,7 @@ class CandidateChatbot:
                 """
 
                 extracted = await llm_service.extract_structured_data(
-                    extraction_prompt, schema, self.conversation_history
+                    extraction_prompt, schema, self.conversation_history, agent_role="chatbot"
                 )
                 condition = extracted.get("physical_condition") if extracted else None
 
@@ -1226,12 +1251,39 @@ class CandidateChatbot:
                 )
                 interests = extracted.get("interests") if extracted else None
 
+            def _strip_limitation_phrases(text: str) -> str:
+                if not text:
+                    return text
+                patterns = [
+                    r"\b(?:not|no)\s+remote\b",
+                    r"\bprefer\s+(?:no|not)\s+remote\b",
+                    r"\b(?:in\s*person|on-?site|onsite)\s+only\b",
+                    r"\b(?:do\s+not|don't)\s+want\s+to\s+work\s+remotely\b",
+                    r"\bno\s+computer(?:\s+work)?\b",
+                    r"\bnot\s+work\s+on\s+the\s+computer\b",
+                    r"\bno\s+more\s+than\s+\d+\s*(?:hours|hrs)\b",
+                ]
+                out = text
+                for pat in patterns:
+                    out = re.sub(pat, "", out, flags=re.IGNORECASE)
+                # Clean connective leftovers
+                out = re.sub(r"\s+(?:and|or)\s*$", "", out.strip())
+                out = re.sub(r"\s{2,}", " ", out)
+                return out.strip(" ,.")
+
             if interests:
-                self.candidate_info["interests"] = interests.strip()
-                # Try to parse limitations from the same message
+                # First, check for limitations in the same message
                 inline_limits = self._detect_limitations_from_message(message)
-                if inline_limits:
+                if inline_limits and not self.candidate_info.get("limitations"):
                     self.candidate_info["limitations"] = inline_limits
+
+                cleaned_interests = _strip_limitation_phrases(interests)
+                if cleaned_interests:
+                    self.candidate_info["interests"] = cleaned_interests
+                # If interests were entirely limitation phrases, keep previous interests unchanged
+
+                if inline_limits:
+                    # We already captured limitations; proceed to validation
                     self.conversation_state = "validating_profile"
                     return await self._validate_profile()
 
@@ -1356,13 +1408,17 @@ class CandidateChatbot:
             if summary:
                 message_parts.insert(0, summary.strip())
 
-        # Ask for consent before generating job positions
-        consent_question = "Would you like me to generate job positions now?"
-        message_parts.append(consent_question)
+        # Automatically generate job recommendations after validation
+        recommendations = await self._recommend_jobs()
+        if recommendations:
+            message_parts.append(recommendations)
+        message_parts.append(
+            "I've saved these details. If anything looks off, please edit it directly in the profile panel or tell me what to change."
+        )
 
-        self.conversation_state = "awaiting_recommendation_consent"
-        self.last_question = consent_question
-        self.last_question_type = "recommendations_consent"
+        self.conversation_state = "profile_complete"
+        self.last_question = None
+        self.last_question_type = None
 
         return "\n\n".join(part for part in message_parts if part)
 

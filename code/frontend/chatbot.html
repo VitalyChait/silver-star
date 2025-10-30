@@ -530,6 +530,10 @@
 
                 if (!hasVisible && hiddenApplied) {
                     const hiddenFieldLabels = Array.from(hiddenFields).map(field => fieldLabels[field] || field);
+                    // Suppress filler response when only the name prompt was hidden
+                    if (hiddenFields.size === 1 && hiddenFields.has('full_name')) {
+                        return { html: '', hasVisible: false, hiddenApplied: true };
+                    }
                     let fallbackText = 'Thanks for confirming!';
                     if (hiddenFieldLabels.length > 0) {
                         const readable = hiddenFieldLabels.length === 1
@@ -730,18 +734,39 @@
                     }
                 }
 
-                // Interests quick extraction
+                // Interests quick extraction, with limitation stripping
                 const interestsPatterns = [
-                    /\b(?:i\s+would\s+like\s+to\s+be|i\s+want\s+to\s+be|i'm\s+interested\s+in|i\s+am\s+interested\s+in|i\s+like\s+to\s+work\s+as|my\s+interests\s+are)\s+([^.!?]{2,120})/i
+                    /\b(?:i\s+would\s+like\s+to\s+be|i\s+want\s+to\s+be|i'm\s+interested\s+in|i\s+am\s+interested\s+in|i\s+like\s+to\s+work\s+as|my\s+interests\s+are)\s+([^.!?]{2,240})/i
+                ];
+                const limitationPhrases = [
+                    /\b(?:not|no)\s+remote\b/i,
+                    /\bprefer\s+(?:no|not)\s+remote\b/i,
+                    /\b(?:do\s+not|don't)\s+want\s+to\s+work\s+remotely\b/i,
+                    /\bnot\s+work\s+on\s+the\s+computer\b/i,
+                    /\bno\s+computer(?:\s+work)?\b/i,
+                    /\bno\s+more\s+than\s+\d+\s*(?:hours|hrs)\b/i,
+                    /\b(?:do\s+not|don't)\s+want\s+to\s+drive\s+(?:to\s+work\s+)?for\s+more\s+than\s+\d+\s*(?:hours?|hrs?)\b/i,
+                    /\b(?:commute|driv(?:e|ing))\s+(?:over|more\s+than)\s+\d+\s*(?:hours?|hrs?)\b/i
                 ];
                 for (const pattern of interestsPatterns) {
                     const m = workingMessage.match(pattern);
                     if (m && m[1]) {
-                        const val = finalizeCapturedValue(m[1]);
+                        let val = finalizeCapturedValue(m[1]);
+                        if (!val) break;
+                        // If limitations phrases appear, move them to limitations and strip from interests
+                        let foundLimitation = false;
+                        limitationPhrases.forEach(pat => {
+                            if (pat.test(val)) {
+                                foundLimitation = true;
+                                updates.push({ field: 'limitations', value: (val.match(pat) || [''])[0] });
+                                val = val.replace(pat, '').trim();
+                            }
+                        });
+                        val = val.replace(/\s+(?:and|or)\s*$/i, '').replace(/\s{2,}/g, ' ').replace(/^[,;]+|[,;]+$/g, '');
                         if (val) {
                             updates.push({ field: 'interests', value: val });
-                            break;
                         }
+                        break;
                     }
                 }
 
@@ -1076,7 +1101,8 @@
 
                 profileSaveStatus.classList.toggle('text-amber-300', Boolean(hasChanges));
                 profileSaveStatus.classList.toggle('text-gray-400', !hasChanges);
-                saveProfileButton.disabled = !hasChanges;
+                // Keep the button enabled to allow explicit saves
+                saveProfileButton.disabled = false;
             }
 
             function renderProfile() {
