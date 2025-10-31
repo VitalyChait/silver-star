@@ -8,17 +8,40 @@ GEMINI_VERTEX_REGION=us-central1
 GEMINI_VERTEX_PROJECT=gen-lang-client-0395786487
 
 # OpenAI Python Package calls (Use with any provider, in example z.ai)
+# Required for Craigslist intent extraction and chatbot functionality
 LLM_API_KEY=
 LLM_MODEL=glm-4.6 # gpt-4o-mini
 LLM_BASE_URL=https://api.z.ai/api/paas/v4/
 
+# Craigslist Scraper Configuration
+# Required: ScrapingBee API key for scraping Craigslist job listings
+# Get your API key at: https://www.scrapingbee.com/
 SCRAPINGBEE_API_KEY=
+
+# Optional: Session ID for maintaining cookies across requests
+# Helps avoid rate limiting and improves scraping success rate
 SCRAPINGBEE_SESSION_ID=cl_session_1
+
+# Craigslist Location Settings
+# Default Craigslist site to search (e.g., boston, newyork, sfbay)
 CL_SITE_DEFAULT=boston
+
+# Comma-separated list of Craigslist sites to search for remote jobs
+# When a candidate specifies "remote" as their location preference,
+# the scraper will search across all these sites
+# Common sites: boston, newyork, sfbay, chicago, losangeles, seattle, austin,
+#               atlanta, miami, dallas, denver, sandiego, portland
 REMOTE_SITES=boston,newyork,sfbay,chicago,losangeles,seattle,austin,atlanta,miami,dallas,denver,sandiego,portland
 
+# Debug and Logging Settings
+# Set to 1 to enable debug logging for intent extraction
 DEBUG_INTENT=0
+
+# Set to 1 to enable detailed LLM API logging
 LLM_LOGS_ENABLED=1
+
+# Set to 1 to enable location validation using Nominatim (OpenStreetMap)
+# This validates and formats user-provided locations
 GEO_VALIDATE=1
 
 # Price control

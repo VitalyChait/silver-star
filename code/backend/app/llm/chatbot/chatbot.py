@@ -1542,8 +1542,110 @@ class CandidateChatbot:
             logger.error("[chatbot.py] Error generating executive summary: %s", exc)
             return None
     
+    async def _search_craigslist_jobs(self) -> Optional[str]:
+        """
+        Search Craigslist for jobs matching the candidate's profile.
+        
+        This method:
+        1. Checks if Craigslist service is available
+        2. Searches for jobs based on candidate info
+        3. Caches results in database
+        4. Returns formatted job listings
+        
+        Returns:
+            Formatted string with Craigslist job listings, or None if unavailable/failed
+        """
+        if not self.db_session:
+            logger.warning("Cannot search Craigslist jobs: no database session")
+            return None
+        
+        try:
+            # Import the Craigslist service
+            from ...services.craigslist_service import craigslist_service
+            
+            # Check if service is available
+            if not craigslist_service.is_available():
+                logger.info("Craigslist service not available - skipping job search")
+                return None
+            
+            # Ensure we have at least interests to search
+            if not self.candidate_info.get("interests"):
+                logger.info("Cannot search Craigslist: missing interests field")
+                return None
+            
+            logger.info("Searching Craigslist for jobs matching candidate profile...")
+            
+            # Get conversation_id from the chatbot's context (you may need to store this)
+            # For now, we'll generate one based on the candidate name or use None
+            conversation_id = self.conversation_history[0].get("conversation_id") if self.conversation_history else None
+            
+            # Search for jobs
+            jobs, metadata = craigslist_service.search_jobs_for_candidate(
+                candidate_info=self.candidate_info,
+                db=self.db_session,
+                user_id=None,  # Will be set by the router if user is authenticated
+                conversation_id=conversation_id,
+                cache_hours=24,
+                force_refresh=False
+            )
+            
+            if not jobs:
+                logger.info("No Craigslist jobs found")
+                return None
+            
+            # Format the jobs for display
+            logger.info(f"Found {len(jobs)} Craigslist jobs")
+            
+            response_parts = []
+            response_parts.append("I've also searched Craigslist and found these real job postings:")
+            response_parts.append("")
+            
+            # Show top 5 most relevant jobs
+            for i, job in enumerate(jobs[:5], 1):
+                title = job.get("title", "Untitled")
+                company = job.get("company")
+                location = job.get("location", "Location not specified")
+                snippet = job.get("snippet", "")
+                url = job.get("apply_url", "")
+                posted = job.get("posted_at", "")
+                
+                response_parts.append(f"{i}. {title}")
+                if company:
+                    response_parts.append(f"   Company: {company}")
+                response_parts.append(f"   Location: {location}")
+                if posted:
+                    response_parts.append(f"   Posted: {posted}")
+                if snippet:
+                    # Limit snippet length
+                    snippet_text = snippet[:150] + "..." if len(snippet) > 150 else snippet
+                    response_parts.append(f"   {snippet_text}")
+                if url:
+                    response_parts.append(f"   Apply: {url}")
+                response_parts.append("")
+            
+            if len(jobs) > 5:
+                response_parts.append(f"...and {len(jobs) - 5} more jobs available!")
+                response_parts.append("To see all jobs, visit the jobs panel or ask me to show more.")
+            
+            response_parts.append("")
+            response_parts.append("These jobs are now saved in your profile and you can review them anytime.")
+            
+            return "\n".join(response_parts)
+            
+        except Exception as e:
+            logger.error(f"Failed to search Craigslist jobs: {e}", exc_info=True)
+            return None
+    
     async def _recommend_jobs(self) -> str:
-        """Generate job recommendations based on candidate information."""
+        """
+        Generate job recommendations based on candidate information.
+        
+        This method now includes:
+        1. Traditional job recommendations from the database
+        2. Live Craigslist job search results
+        """
+        response_parts = []
+        
         try:
             # Get job recommendations using the recommendation service
             if self.db_session:
@@ -1570,13 +1672,9 @@ class CandidateChatbot:
                             recommendation_text += f"   Match Score: {rec['match_score']}%\n"
                             recommendation_text += f"   Why it's a good fit: {rec['match_reason']}\n\n"
                     
-                    recommendation_text = "\n===BEGIN_RECS===\n" + recommendation_text
                     recommendation_text += "Would you like more details about any of these positions, or would you like to see more recommendations?\n"
-                    recommendation_text += "===END_RECS===\n"
-                    
-                    return recommendation_text
-                else:
-                    return "I couldn't find any specific job matches in our database at the moment. This might be because we're still building our job listings. Let me provide some general advice based on your profile instead."
+                    response_parts.append("===BEGIN_RECS===")
+                    response_parts.append(recommendation_text)
             else:
                 # Fallback to mock recommendations if no database session
                 candidate_summary = json.dumps(self.candidate_info, indent=2)
@@ -1601,8 +1699,23 @@ class CandidateChatbot:
                 """
                 
                 text = await llm_service.generate_response(prompt, agent_role="chatbot")
-                # Wrap fallback block so UI preserves newlines nicely
-                return "\n===BEGIN_RECS===\n" + text + "\n===END_RECS===\n"
+                response_parts.append("===BEGIN_RECS===")
+                response_parts.append(text)
+            
+            # Search Craigslist for additional real job postings
+            craigslist_jobs = await self._search_craigslist_jobs()
+            if craigslist_jobs:
+                response_parts.append("")
+                response_parts.append(craigslist_jobs)
+            
+            # Close the recommendations block
+            response_parts.append("===END_RECS===")
+            
+            if response_parts:
+                return "\n".join(response_parts)
+            else:
+                return "I couldn't find any specific job matches at the moment. This might be because we're still building our job listings. Would you like me to provide some general job search advice instead?"
+                
         except Exception as e:
             logger.error(f"[chatbot.py] Error generating job recommendations: {str(e)}")
             

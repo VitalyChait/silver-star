@@ -30,6 +30,16 @@ except ImportError as e:
     print("Chatbot functionality will not be available.", file=sys.stderr)
     chatbot_available = False
 
+# Try to import the craigslist router
+try:
+    from .routers import craigslist
+    craigslist_available = True
+    print("Craigslist module loaded successfully")
+except ImportError as e:
+    print(f"Warning: Could not import craigslist module: {e}", file=sys.stderr)
+    print("Craigslist functionality will not be available.", file=sys.stderr)
+    craigslist_available = False
+
 
 def create_app() -> FastAPI:
     app = FastAPI(title=settings.app_name)
@@ -65,6 +75,10 @@ def create_app() -> FastAPI:
     # Only include the chatbot router if it was successfully imported
     if chatbot_available:
         app.include_router(chatbot.router)
+    
+    # Only include the craigslist router if it was successfully imported
+    if craigslist_available:
+        app.include_router(craigslist.router)
 
     @app.get("/health")
     def health():
