@@ -30,9 +30,9 @@ class AudioPlayer:
             
             # Create a temporary directory for audio files
             self._temp_dir = tempfile.mkdtemp()
-            logger.info("Audio player initialized successfully")
+            logger.info("[audio_player.py] Audio player initialized successfully")
         except Exception as e:
-            logger.error(f"Failed to initialize audio player: {str(e)}")
+            logger.error(f"[audio_player.py] Failed to initialize audio player: {str(e)}")
             self._initialized = False
     
     async def play_text(self, text: str, language_code: str = "en-US", voice_name: Optional[str] = None) -> bool:
@@ -48,7 +48,7 @@ class AudioPlayer:
             True if playback was successful, False otherwise
         """
         if not self._initialized:
-            logger.warning("Audio player not initialized, cannot play text")
+            logger.warning("[audio_player.py] Audio player not initialized, cannot play text")
             return False
         
         try:
@@ -60,7 +60,7 @@ class AudioPlayer:
             )
             
             if not audio_base64:
-                logger.error("Failed to convert text to speech")
+                logger.error("[audio_player.py] Failed to convert text to speech")
                 return False
             
             # Decode the base64 audio data
@@ -78,11 +78,11 @@ class AudioPlayer:
             try:
                 os.unlink(temp_file_path)
             except Exception as e:
-                logger.warning(f"Failed to delete temporary audio file: {str(e)}")
+                logger.warning(f"[audio_player.py] Failed to delete temporary audio file: {str(e)}")
             
             return success
         except Exception as e:
-            logger.error(f"Error playing text: {str(e)}")
+            logger.error(f"[audio_player.py] Error playing text: {str(e)}")
             return False
     
     async def _play_audio_file(self, file_path: str) -> bool:
@@ -106,7 +106,7 @@ class AudioPlayer:
             
             return True
         except Exception as e:
-            logger.error(f"Error playing audio file: {str(e)}")
+            logger.error(f"[audio_player.py] Error playing audio file: {str(e)}")
             return False
     
     def cleanup(self):
@@ -115,9 +115,9 @@ class AudioPlayer:
             if self._temp_dir and os.path.exists(self._temp_dir):
                 import shutil
                 shutil.rmtree(self._temp_dir)
-                logger.info("Cleaned up temporary audio files")
+                logger.info("[audio_player.py] Cleaned up temporary audio files")
         except Exception as e:
-            logger.error(f"Error during cleanup: {str(e)}")
+            logger.error(f"[audio_player.py] Error during cleanup: {str(e)}")
 
 
 # Create a singleton instance

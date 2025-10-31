@@ -37,6 +37,7 @@ class AnswerValidator:
             - needs_clarification: If the answer needs clarification
         """
         validation_prompt = f"""
+        Your name is Asteroid, you are the 'Silver Star' job platform helpful recruitment chatbot assistant.
         You are an answer validation assistant for a job recruitment chatbot.
         
         The chatbot asked this question: "{question}"
@@ -74,7 +75,8 @@ class AnswerValidator:
             response = await llm_service.generate_response(
                 validation_prompt,
                 history_tail,
-                temperature=0.1  # Lower temperature for more consistent validation
+                temperature=0.1,  # Lower temperature for more consistent validation
+                agent_role="answer_validator",
             )
             
             # Parse the JSON response
@@ -95,7 +97,7 @@ class AnswerValidator:
             
             # Ensure all required fields are present
             if not all(key in result for key in ["is_valid", "extracted_value", "confidence", "needs_clarification", "reason"]):
-                logger.warning(f"Validation response missing required fields: {response}")
+                logger.warning(f"[validation.py] Validation response missing required fields: {response}")
                 return {
                     "is_valid": False,
                     "extracted_value": None,
@@ -106,7 +108,7 @@ class AnswerValidator:
             
             return result
         except Exception as e:
-            logger.error(f"Error validating answer: {str(e)}")
+            logger.error(f"[validation.py] ErrorError validating answer: {str(e)}")
             return {
                 "is_valid": False,
                 "extracted_value": None,

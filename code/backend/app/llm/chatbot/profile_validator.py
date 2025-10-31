@@ -4,7 +4,7 @@ import os
 from typing import Any, Dict, List
 
 from ..core.service import llm_service
-from ..core.utils import compact_json, strip_json_code_fences
+from ..core.utils import compact_json, strip_json_code_fences, extract_first_json_block
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,7 @@ class ProfileValidationService:
             )
 
             validation_prompt = f"""
+            Your name is Asteroid, you are the 'Silver Star' job platform helpful recruitment chatbot assistant.
             You are validating a candidate intake form for a community job placement program.
             Review the profile below and determine if it contains meaningful information for each field.
 
@@ -70,10 +71,16 @@ class ProfileValidationService:
             """
 
             llm_response = await llm_service.generate_response(
-                validation_prompt, temperature=0.2, max_output_tokens=1024 * int(os.getenv("TOKENS_MULT"))
+                validation_prompt,
+                temperature=0.2,
+                max_output_tokens=1024 * int(os.getenv("TOKENS_MULT")),
+                agent_role="profile_validator",
             )
 
-            llm_result = json.loads(strip_json_code_fences(llm_response))
+            # Be lenient: handle prose-wrapped JSON and fenced blocks
+            cleaned = strip_json_code_fences(llm_response)
+            payload = extract_first_json_block(cleaned) or cleaned
+            llm_result = json.loads(payload)
 
             for key in result:
                 if key in llm_result and llm_result[key] is not None:
@@ -91,7 +98,7 @@ class ProfileValidationService:
                 result["is_complete"] = bool(llm_result.get("is_complete", True))
 
         except Exception as exc:  # pylint: disable=broad-except
-            logger.error("Profile validation fallback due to error: %s", exc)
+            logger.error("[profile_validator.py] Profile validation fallback due to error: %s", exc)
             # Fall back to heuristic completeness check
             result["is_complete"] = len(result["missing_fields"]) == 0
             if not result["summary"]:

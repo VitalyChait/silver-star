@@ -1,5 +1,6 @@
 
 import json
+import os
 from typing import Any, Dict, Optional, Union
 
 from fastapi import FastAPI, HTTPException
@@ -134,7 +135,7 @@ def run_pipeline(body: RunRequest):
 # Optional: local dev server
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PYTHON_APP_PORT", "8000")))
 
 
 INTENT_QUESTIONS = [
@@ -178,4 +179,3 @@ def intent_prompt():
     }
 
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
-

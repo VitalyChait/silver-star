@@ -13,17 +13,20 @@ SilverStar is a job application platform that connects experienced professionals
 ## Quick Start
 
 ### Configure environment variables
-cp ../env_example .env
+cp code/env_example code/.env"
 #### Edit .env with your actual API keys and provider details
 
 ### Run scripts/setup_and_run.sh
-##### You will be asked if you want to initialize the database 
+#### You will be asked if you want to initialize the database
+#### You can pass argument to control the ports 
 
 
 ## Accessing the Application
 
 Once running, you can access:
 
-- Main page: http://localhost:3000/silverstar.html
-- Chatbot: http://localhost:3000/chatbot.html
-- API documentation: http://localhost:8000/docs
+- Main page: http://localhost:NODE_APP_PORT/silverstar.html
+- API documentation: http://localhost:PYTHON_APP_PORT/docs
+
+#### Defaults: PYTHON_APP_PORT=8000 , NODE_APP_PORT=3000
+

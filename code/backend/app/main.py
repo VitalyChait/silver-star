@@ -12,8 +12,9 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 # Install the global exception handler
 sys.excepthook = handle_exception
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
+import json
 
 from .config import settings
 from .db import engine, Base
@@ -33,10 +34,21 @@ except ImportError as e:
 def create_app() -> FastAPI:
     app = FastAPI(title=settings.app_name)
 
+    # Capture environment-derived values once at startup
+    startup_env = {
+        "NODE_APP_PORT": int(os.getenv("NODE_APP_PORT", "3000")),
+        "PYTHON_APP_PORT": int(os.getenv("PYTHON_APP_PORT", "8000")),
+    }
+    app.state.startup_env = startup_env
+
     # CORS for local dev
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[settings.frontend_origin, "http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_origins=[
+            settings.frontend_origin,
+            f"http://localhost:{startup_env['NODE_APP_PORT']}",
+            f"http://127.0.0.1:{startup_env['NODE_APP_PORT']}",
+        ],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -61,6 +73,13 @@ def create_app() -> FastAPI:
     @app.get("/")
     def root():
         return {"name": settings.app_name}
+
+    # Expose frozen environment for frontend once per server start
+    @app.get("/env.js")
+    def env_js():
+        payload = json.dumps(app.state.startup_env)
+        body = f"window.__ENV__ = {payload}; Object.freeze(window.__ENV__);"
+        return Response(content=body, media_type="application/javascript")
 
     return app
 

@@ -14,7 +14,12 @@ except ImportError as e:
     sys.exit(1)
 
 from ..core.service import llm_service
-from ..core.utils import compact_json, compact_jobs, strip_json_code_fences
+from ..core.utils import (
+    compact_json,
+    compact_jobs,
+    strip_json_code_fences,
+    extract_first_json_block,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +75,7 @@ class JobRecommendationService:
             
             return recommendations
         except Exception as e:
-            logger.error(f"Error generating job recommendations: {str(e)}")
+            logger.error(f"[recommendations.py] Error generating job recommendations: {str(e)}")
             return []
     
     async def _generate_recommendations_with_llm(
@@ -145,27 +150,37 @@ class JobRecommendationService:
         
         try:
             response = await llm_service.generate_response(
-                prompt, 
+                prompt,
                 temperature=0.3,  # Lower temperature for more consistent recommendations
-                max_output_tokens=900 * int(os.getenv("TOKENS_MULT"))
+                max_output_tokens=900 * int(os.getenv("TOKENS_MULT")),
+                agent_role="recommendations",
             )
-            
-            # Parse the JSON response
-            recommendations = json.loads(strip_json_code_fences(response))
-            
+        except Exception as e:
+            logger.error(f"[recommendations.py] Error generating recommendations with LLM: {str(e)}")
+            return []
+
+        try:
+            # Extract the first JSON array/object from the response, handling prose and code fences
+            candidate_json = extract_first_json_block(response)
+            if not candidate_json:
+                # Try again after stripping top-level fences if any
+                stripped_response = strip_json_code_fences(response)
+                candidate_json = extract_first_json_block(stripped_response)
+            if not candidate_json:
+                logger.error("[recommendations.py] No JSON block found in LLM response")
+                logger.error(f"[recommendations.py] LLM response preview: {response[:400]}")
+                return []
+
+            recommendations = json.loads(candidate_json)
             # Ensure we have a list
             if not isinstance(recommendations, list):
-                logger.error("LLM response is not a list")
+                logger.error("[recommendations.py] LLM response is not a list")
                 return []
-            
             # Limit the number of recommendations
             return recommendations[:limit]
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse LLM response as JSON: {str(e)}")
-            logger.error(f"LLM response: {response}")
-            return []
         except Exception as e:
-            logger.error(f"Error generating recommendations with LLM: {str(e)}")
+            logger.error(f"[recommendations.py] Failed to parse LLM response as JSON: {str(e)}")
+            logger.error(f"[recommendations.py] LLM response: {response}")
             return []
     
     async def get_job_details_for_recommendation(
@@ -199,7 +214,7 @@ class JobRecommendationService:
                 "created_at": job.created_at.isoformat() if job.created_at else None
             }
         except Exception as e:
-            logger.error(f"Error getting job details: {str(e)}")
+            logger.error(f"[recommendations.py] Error getting job details: {str(e)}")
             return None
 
 

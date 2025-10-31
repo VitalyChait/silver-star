@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SilverStar - Job Search Assistant</title>
     <!-- Tailwind CSS CDN --><script src="https://cdn.tailwindcss.com"></script>
+    <!-- Startup environment config -->
+    <script src="/env.js"></script>
     <!-- Google Fonts - Inter --><link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap" rel="stylesheet">
@@ -305,7 +307,7 @@
         document.addEventListener('DOMContentLoaded', () => {
             // --- Authentication State ---
             let currentUser = null;
-            const API_BASE_URL = 'http://localhost:8000/api';
+            const API_BASE_URL = 'http://localhost:' + (window.__ENV__ && window.__ENV__.PYTHON_APP_PORT) + '/api';
             let conversationId = null;
             let isRecording = false;
             let speechRecognition = null;
@@ -459,26 +461,31 @@
                     /\bcould you (?:please )?(?:share|tell me)\s+(?:your\s+)?name\b/i
                 ],
                 location: [
-                    /\bwhere (?:are|r)\s+you\s+(?:located|based|living|from)\b/i,
+                    // allow optional adverbs between "you" and the keyword (e.g., "currently")
+                    /\bwhere (?:are|r)\s+you(?:\s+\w+){0,3}\s+(?:located|based|living|from)\b/i,
                     /\bwhat(?:'s| is)\s+your\s+location\b/i,
                     /\bcould you (?:please )?(?:share|tell me)\s+(?:your\s+)?location\b/i
                 ],
                 age: [
                     /\bhow\s+old\s+are\s+you\b/i,
                     /\bwhat(?:'s| is)\s+your\s+age\b/i,
-                    /\bcould you (?:please )?(?:share|tell me)\s+(?:your\s+)?age\b/i
+                    /\bcould you (?:please )?(?:share|tell me)\s+(?:your\s+)?age\b/i,
+                    /\b(?:date\s+of\s+birth|dob)\b/i
                 ],
                 physical_condition: [
-                    /\bdescribe\s+(?:your\s+)?physical\s+condition\b/i,
-                    /\bany\s+physical\s+limitations\b/i
+                    /\bdescribe\s+(?:your\s+)?(?:current\s+)?physical\s+condition\b/i,
+                    /\bany\s+physical\s+limitations\b/i,
+                    /\bhow\s+is\s+(?:your\s+)?health\b/i
                 ],
                 interests: [
                     /\bwhat\s+are\s+your\s+interests\b/i,
-                    /\bwhat\s+do\s+you\s+enjoy\b/i
+                    /\bwhat\s+do\s+you\s+enjoy\b/i,
+                    /\bwhat\s+roles?\s+are\s+you\s+(?:most\s+)?interested\s+in\b/i
                 ],
                 limitations: [
                     /\bdo\s+you\s+have\s+any\s+limitations\b/i,
-                    /\bwhat\s+limitations\s+do\s+you\s+have\b/i
+                    /\bwhat\s+limitations\s+do\s+you\s+have\b/i,
+                    /\banything\s+you\s+prefer\s+to\s+avoid\b/i
                 ]
             };
 
@@ -487,24 +494,8 @@
                     return { html: '', hasVisible: false, hiddenApplied: false };
                 }
 
-                const segments = content.split(/\n+/);
-                const sentenceCandidates = [];
-                segments.forEach(segment => {
-                    const trimmed = segment.trim();
-                    if (!trimmed) {
-                        return;
-                    }
-                    const sentences = trimmed.match(/[^.!?]+[.!?]?/g);
-                    if (sentences) {
-                        sentences.forEach(sentence => {
-                            if (sentence && sentence.trim()) {
-                                sentenceCandidates.push(sentence.trim());
-                            }
-                        });
-                    } else {
-                        sentenceCandidates.push(trimmed);
-                    }
-                });
+                // Preserve incoming line structure; operate per logical line instead of per-sentence
+                const sentenceCandidates = content.split(/\n+/).map(s => s.trim()).filter(Boolean);
 
                 const fragments = [];
                 let hasVisible = false;
@@ -539,6 +530,10 @@
 
                 if (!hasVisible && hiddenApplied) {
                     const hiddenFieldLabels = Array.from(hiddenFields).map(field => fieldLabels[field] || field);
+                    // Suppress filler response when only the name prompt was hidden
+                    if (hiddenFields.size === 1 && hiddenFields.has('full_name')) {
+                        return { html: '', hasVisible: false, hiddenApplied: true };
+                    }
                     let fallbackText = 'Thanks for confirming!';
                     if (hiddenFieldLabels.length > 0) {
                         const readable = hiddenFieldLabels.length === 1
@@ -551,7 +546,7 @@
                 }
 
                 return {
-                    html: fragments.join(' '),
+                    html: fragments.join('\n'),
                     hasVisible,
                     hiddenApplied
                 };
@@ -639,6 +634,15 @@
                 return false;
             }
 
+            function detectSimpleCorrection(field, value) {
+                if (!value || typeof value !== 'string') return null;
+                if (field === 'physical_condition') {
+                    const corrected = value.replace(/\b[hg]o\s+health\b/gi, 'no health');
+                    if (corrected !== value) return corrected;
+                }
+                return null;
+            }
+
             function extractProfileInfoFromMessage(message) {
                 const updates = [];
                 if (!message || typeof message !== 'string') {
@@ -649,6 +653,8 @@
                 if (!workingMessage) {
                     return updates;
                 }
+
+                const sentences = workingMessage.split(/[.!?]+\s+/);
 
                 if (/name/i.test(workingMessage)) {
                     const correctionMatches = [...workingMessage.matchAll(/(?:it\s*(?:'s| is)\s+)([A-Za-z][A-Za-z'-]*(?:\s+[A-Za-z][A-Za-z'-]*)+)/gi)];
@@ -680,28 +686,110 @@
                 }
 
                 const locationPatterns = [
-                    /(?:\bi (?:am|i'm|currently am|currently i'm|live|currently live|reside|stay)\s*(?:currently\s*)?(?:in|at)\s+)([^.?!]+)/i,
+                    /(?:\bi (?:am|i'm|currently am|currently i'm|live|currently live|reside|stay|am located|am based)\s*(?:currently\s*)?(?:in|at)\s+)([^.?!]+)/i,
                     /(?:\bi(?:'m)?\s*based in\s+)([^.?!]+)/i,
                     /(?:\bi (?:hail from|come from|am from|i'm from)\s+)([^.?!]+)/i
                 ];
+                const locationExclusions = /(health|condition|issues?|interests?|limitations?|remote|computer|drive|driving|teacher|wood)/i;
+                for (const s of sentences) {
+                    for (const pattern of locationPatterns) {
+                        const match = s.match(pattern);
+                        if (match && match[1]) {
+                            const proposed = finalizeCapturedValue(match[1]);
+                            if (!proposed || locationExclusions.test(proposed)) continue;
+                            if (proposed.length >= 3 && proposed.length <= 80 && /[a-zA-Z]/.test(proposed)) {
+                                updates.push({ field: 'location', value: proposed });
+                                pattern.lastIndex = 0;
+                                break;
+                            }
+                        }
+                    }
+                    if (updates.some(u => u.field === 'location')) break;
+                }
 
-                for (const pattern of locationPatterns) {
-                    const match = workingMessage.match(pattern);
-                    if (match && match[1]) {
-                        const proposed = finalizeCapturedValue(match[1]);
-                        if (proposed && proposed.length >= 3 && proposed.length <= 80 && /[a-zA-Z]/.test(proposed)) {
-                            updates.push({ field: 'location', value: proposed });
+                const ageRegex = /(?:\b(?:my age is|i am|i'm)\s+)(\d{1,3})(?:\s*(?:years old|yrs old|yrs|years|y\/o|yo))?\b/i;
+            const ageMatch = workingMessage.match(ageRegex);
+                if (ageMatch) {
+                    const ageNum = parseInt(ageMatch[1], 10);
+                    if (!Number.isNaN(ageNum) && ageNum >= 14 && ageNum <= 100) {
+                        updates.push({ field: 'age', value: `${ageNum}` });
+                    }
+                }
+
+                // Physical condition quick extraction
+                const physPatterns = [
+                    /\bphysical\s+condition\s*(?:is|:)?\s*([^.!?]{2,100})/i,
+                    /\b(?:health|health\s+problems|medical\s+issues)\s*(?:is|are|:)?\s*([^.!?]{2,100})/i,
+                    /\b(?:in|with)\s+(?:excellent|good|fair|poor)\s+(?:health|shape|condition)\b/i,
+                    /\bno\s+health\s+problems?\b/i
+                ];
+                for (const pattern of physPatterns) {
+                    const m = workingMessage.match(pattern);
+                    if (m) {
+                        let val = m[1] ? finalizeCapturedValue(m[1]) : m[0];
+                        if (val && val.length <= 120) {
+                            updates.push({ field: 'physical_condition', value: val });
                             break;
                         }
                     }
                 }
 
-                const ageRegex = /(?:\b(?:my age is|i am|i'm)\s+)(\d{1,3})(?:\s*(?:years old|yrs old|yrs|years|y\/o|yo))?\b/i;
-                const ageMatch = workingMessage.match(ageRegex);
-                if (ageMatch) {
-                    const ageNum = parseInt(ageMatch[1], 10);
-                    if (!Number.isNaN(ageNum) && ageNum >= 14 && ageNum <= 100) {
-                        updates.push({ field: 'age', value: `${ageNum}` });
+                // Interests quick extraction, with limitation stripping
+                const interestsPatterns = [
+                    /\b(?:i\s+would\s+like\s+to\s+be|i\s+want\s+to\s+be|i'm\s+interested\s+in|i\s+am\s+interested\s+in|i\s+like\s+to\s+work\s+as|my\s+interests\s+are)\s+([^.!?]{2,240})/i
+                ];
+                const limitationPhrases = [
+                    /\b(?:not|no)\s+remote\b/i,
+                    /\bprefer\s+(?:no|not)\s+remote\b/i,
+                    /\b(?:do\s+not|don't)\s+want\s+to\s+work\s+remotely\b/i,
+                    /\b(?:do\s+not|don't)\s+want\s+to\s+work\s+on\s+the\s+computer\b/i,
+                    /\b(?:no|not)\s+(?:computer\s+work|working\s+on\s+the\s+computer)\b/i,
+                    /\b(?:do\s+not|don't)\s+want\s+(?:a|any)?\s*remote\s+job\b/i,
+                    /\bno\s+remote\s+jobs?\b/i,
+                    /\bnot\s+work\s+on\s+the\s+computer\b/i,
+                    /\bno\s+computer(?:\s+work)?\b/i,
+                    /\bno\s+more\s+than\s+\d+\s*(?:hours|hrs)\b/i,
+                    /\b(?:do\s+not|don't)\s+want\s+to\s+drive\s+(?:to\s+work\s+)?for\s+more\s+than\s+\d+\s*(?:hours?|hrs?)\b/i,
+                    /\b(?:commute|driv(?:e|ing))\s+(?:over|more\s+than)\s+\d+\s*(?:hours?|hrs?)\b/i
+                ];
+                for (const pattern of interestsPatterns) {
+                    const m = workingMessage.match(pattern);
+                    if (m && m[1]) {
+                        let val = finalizeCapturedValue(m[1]);
+                        if (!val) break;
+                        // If limitations phrases appear, move them to limitations and strip from interests
+                        let foundLimitation = false;
+                        limitationPhrases.forEach(pat => {
+                            if (pat.test(val)) {
+                                foundLimitation = true;
+                                updates.push({ field: 'limitations', value: (val.match(pat) || [''])[0] });
+                                val = val.replace(pat, '').trim();
+                            }
+                        });
+                        val = val.replace(/\s+(?:and|or)\s*$/i, '').replace(/\s{2,}/g, ' ').replace(/^[,;]+|[,;]+$/g, '');
+                        if (val) {
+                            updates.push({ field: 'interests', value: val });
+                        }
+                        break;
+                    }
+                }
+
+                // Limitations quick extraction
+                const limitationsPatterns = [
+                    /\b(?:not|no)\s+remote\b/i,
+                    /\bprefer\s+(?:no|not)\s+remote\b/i,
+                    /\b(?:cannot|can't|do\s+not\s+want\s+to)\s+lift\s+\d+/i,
+                    /\b(?:prefer\s+to\s+avoid|avoid)\s+([^.!?]{2,120})/i
+                ];
+                for (const pattern of limitationsPatterns) {
+                    const m = workingMessage.match(pattern);
+                    if (m) {
+                        let val = m[1] ? finalizeCapturedValue(m[1]) : m[0];
+                        val = val.replace(/\b(?:prefer\s+to\s+avoid|avoid)\b\s*/i, '').trim();
+                        if (val) {
+                            updates.push({ field: 'limitations', value: val });
+                            break;
+                        }
                     }
                 }
 
@@ -770,7 +858,15 @@
                     if (!currentValue.trim()) {
                         applyDraftUpdate(field, value);
                         const label = fieldLabels[field] || field;
-                        addBotMessage(`Noted your ${label} as "${value}".`);
+                        // Inline correction suggestion if obvious
+                        const suggestion = detectSimpleCorrection(field, value);
+                        if (suggestion && suggestion !== value) {
+                            addBotMessage(`Noted your ${label} as "${value}".\nDid you mean "${suggestion}"?`);
+                            // stage a pending edit without auto-prompting again
+                            activePendingEdit = { field, newValue: suggestion, previousValue: value };
+                        } else {
+                            addBotMessage(`Noted your ${label} as "${value}".`);
+                        }
                         continue;
                     }
 
@@ -791,16 +887,44 @@
                 }
             }
             
+            // Helper to show a friendly prompt instead of redirecting
+            function showAuthRequired() {
+                if (document.getElementById('auth-required-banner')) return; // prevent duplicates
+
+                // Disable chat inputs
+                const messageInputEl = document.getElementById('message-input');
+                const sendButtonEl = document.getElementById('send-button');
+                const voiceButtonEl = document.getElementById('voice-button');
+                if (messageInputEl) {
+                    messageInputEl.disabled = true;
+                    messageInputEl.placeholder = 'Sign in on the home page to chat';
+                }
+                if (sendButtonEl) sendButtonEl.disabled = true;
+                if (voiceButtonEl) voiceButtonEl.disabled = true;
+
+                // Full-page centered notice
+                const overlay = document.createElement('div');
+                overlay.id = 'auth-required-banner';
+                overlay.className = 'fixed inset-0 flex items-center justify-center z-50 p-6';
+                overlay.innerHTML = `
+                  <div class="text-center bg-gray-900/80 border border-gray-700 rounded-2xl p-8 max-w-xl shadow-2xl">
+                    <img src="public/assets/logo.png" alt="SilverStar" class="mx-auto mb-6 w-28 h-28 object-contain opacity-90" />
+                    <h2 class="text-2xl md:text-3xl font-bold text-gray-100 mb-3">You are not signed in</h2>
+                    <p class="text-gray-300 mb-6">Some features are disabled. Please sign in to continue.</p>
+                    <a href="silverstar.html" class="inline-block bg-gray-200 text-gray-900 px-6 py-3 rounded-lg font-medium hover:bg-white transition">Go to Home to Sign In</a>
+                  </div>
+                `;
+                document.body.appendChild(overlay);
+            }
+
             // Check if user is logged in
             const token = localStorage.getItem('silverstar_token');
             if (!token) {
-                // Redirect to home if not logged in
-                window.location.href = 'silverstar.html';
-                return;
+                showAuthRequired();
             }
             
             // Get user profile
-            fetch(`${API_BASE_URL}/profile`, {
+            if (token) fetch(`${API_BASE_URL}/profile`, {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
@@ -850,11 +974,20 @@
                 addBotMessage("Hello! I'm Asteroid, your SilverStar job assistant. I'll help you find the perfect job opportunity.");
                 addBotMessage("In the interface below, you can write or use voice to chat with me.");
                 addBotMessage("You can chat with me about your job search, your skills, your experience, your location, your salary expectations, your job preferences, etc.");
+                // If we already know the user's name, greet them personally
+                try {
+                    const knownName = (candidateInfo.full_name && candidateInfo.full_name.trim()) || (currentUser && currentUser.name);
+                    if (knownName) {
+                        const firstName = String(knownName).trim().split(/\s+/)[0];
+                        addBotMessage(`Nice to meet you, ${firstName}!`);
+                    }
+                } catch (_) {}
             })
             .catch(error => {
                 console.error('Token validation error:', error);
                 localStorage.removeItem('silverstar_token');
-                window.location.href = 'silverstar.html';
+                // Do not redirect; show prompt and keep page
+                showAuthRequired();
             });
             
             // --- Custom Cursor Logic ---
@@ -972,7 +1105,8 @@
 
                 profileSaveStatus.classList.toggle('text-amber-300', Boolean(hasChanges));
                 profileSaveStatus.classList.toggle('text-gray-400', !hasChanges);
-                saveProfileButton.disabled = !hasChanges;
+                // Keep the button enabled to allow explicit saves
+                saveProfileButton.disabled = false;
             }
 
             function renderProfile() {
@@ -1093,13 +1227,14 @@
             if (resetProfileButton) {
                 resetProfileButton.addEventListener('click', (event) => {
                     event.preventDefault();
+                    // Clear the form fields to empty values (true form reset)
                     profileDraft = {
-                        full_name: candidateInfo.full_name || '',
-                        location: candidateInfo.location || '',
-                        age: candidateInfo.age || '',
-                        physical_condition: candidateInfo.physical_condition || '',
-                        interests: candidateInfo.interests || '',
-                        limitations: candidateInfo.limitations || ''
+                        full_name: '',
+                        location: '',
+                        age: '',
+                        physical_condition: '',
+                        interests: '',
+                        limitations: ''
                     };
                     renderProfile();
                 });
@@ -1114,6 +1249,94 @@
 
             renderProfile();
             
+            function prettifyExecutiveSummaryBlocks(text) {
+                if (!text || typeof text !== 'string') return text;
+                try {
+                    const pattern = /Executive Summary:\s*```json([\s\S]*?)```/i;
+                    const match = text.match(pattern);
+                    if (!match) return text;
+
+                    const jsonRaw = match[1].trim();
+                    let obj;
+                    try {
+                        obj = JSON.parse(jsonRaw);
+                    } catch (_e) {
+                        return text; // leave as-is if JSON parse fails
+                    }
+
+                    const lines = [];
+                    if (obj.summary) {
+                        lines.push(String(obj.summary).trim());
+                    }
+                    if (Array.isArray(obj.suggested_roles) && obj.suggested_roles.length) {
+                        lines.push('Suggested roles:');
+                        obj.suggested_roles.forEach((r, idx) => {
+                            const role = r.role ? String(r.role).trim() : 'Role';
+                            const reason = r.reason ? String(r.reason).trim() : '';
+                            const notes = r.notes ? String(r.notes).trim() : '';
+                            let line = `  ${idx + 1}. ${role}`;
+                            if (reason) line += ` — ${reason}`;
+                            if (notes) line += ` (${notes})`;
+                            lines.push(line);
+                        });
+                    }
+                    if (Array.isArray(obj.next_steps) && obj.next_steps.length) {
+                        lines.push('Next steps:');
+                        obj.next_steps.forEach((s, idx) => {
+                            const step = String(s || '').trim();
+                            if (step) lines.push(`  ${idx + 1}. ${step}`);
+                        });
+                    }
+
+                    const pretty = lines.join('\n');
+                    const replacement = `Executive Summary:\n${pretty}`;
+                    return text.replace(pattern, replacement);
+                } catch (_err) {
+                    return text;
+                }
+            }
+
+            function formatNumberedLists(text) {
+                if (!text || typeof text !== 'string') return text;
+                let out = text;
+                // Ensure headings are followed by a newline
+                out = out.replace(/(Suggested roles:)\s*/i, '$1\n');
+                out = out.replace(/(Next steps:)\s*/i, '$1\n');
+                // Insert a newline before any numbered list token like "1. ", "2. ", etc.,
+                // when it does not already start on a new line.
+                out = out.replace(/(^|[^\n])(\d+\.\s)/g, '$1\n$2');
+                // Remove accidental leading newlines
+                out = out.replace(/^\n+/, '');
+                return out;
+            }
+
+            function renderResponseWithPreservedBlocks(rawText) {
+                const blocks = [];
+                const regex = /===BEGIN_RECS===([\s\S]*?)===END_RECS===/g;
+                let lastIndex = 0;
+                let match;
+                while ((match = regex.exec(rawText)) !== null) {
+                    const start = match.index;
+                    const end = regex.lastIndex;
+                    const before = rawText.slice(lastIndex, start);
+                    if (before.trim()) {
+                        const filtered = filterBotResponse(before);
+                        if (filtered.html) addBotMessage(filtered.html, { isHtml: true });
+                    }
+                    let preserved = match[1];
+                    preserved = formatNumberedLists(prettifyExecutiveSummaryBlocks(preserved));
+                    // Break large block into smaller chat messages by paragraph
+                    const chunks = preserved.split(/\n\n+/).map(s => s.trim()).filter(Boolean);
+                    chunks.forEach(chunk => addBotMessage(chunk));
+                    lastIndex = end;
+                }
+                const tail = rawText.slice(lastIndex);
+                if (tail.trim()) {
+                    const filteredTail = filterBotResponse(tail);
+                    if (filteredTail.html) addBotMessage(filteredTail.html, { isHtml: true });
+                }
+            }
+
             async function sendChatMessage(message, options = {}) {
                 const { showUserMessage = true } = options;
                 const trimmedMessage = (message || '').trim();
@@ -1149,9 +1372,15 @@
                     
                     const data = await response.json();
                     
-                    const filteredResponse = filterBotResponse(data.response);
-                    if (filteredResponse.html) {
-                        addBotMessage(filteredResponse.html, { isHtml: true });
+                    const improvedText = prettifyExecutiveSummaryBlocks(data.response);
+                    if (/===BEGIN_RECS===/.test(improvedText)) {
+                        renderResponseWithPreservedBlocks(improvedText);
+                    } else {
+                        const withLines = formatNumberedLists(improvedText);
+                        const filteredResponse = filterBotResponse(withLines);
+                        if (filteredResponse.html) {
+                            addBotMessage(filteredResponse.html, { isHtml: true });
+                        }
                     }
                     conversationId = data.conversation_id;
                     

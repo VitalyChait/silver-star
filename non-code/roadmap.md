@@ -40,9 +40,9 @@ This phase covers the technical architecture and the creation of a Minimum Viabl
 
 ### Step 2.1: Plan Your Technical Stack - @Vitaly & @Cindy
 
-* **Platform decision:** Stack decision - what are you comfortable coding with and vibe coding advantages (example: React > Flutter for AI agnets) - Ref: ./non-code/arch/stack/
-* **Database design:** Set up a database to store job listings, user information, and other site data. This will include fields for job titles, descriptions, requirements, company details, and location. Consider score/cred ranking system. - Ref: ./non-code/arch/db
-* **Hosting:** Select a hosting provider - Ref: ./non-code/arch/host/
+* **Platform decision:** Stack decision - what are you comfortable coding with and vibe coding advantages (example: React > Flutter for AI agnets) - Ref: non-code/arch/stack/
+* **Database design:** Set up a database to store job listings, user information, and other site data. This will include fields for job titles, descriptions, requirements, company details, and location. Consider score/cred ranking system. - Ref: non-code/arch/db
+* **Hosting:** Select a hosting provider - Ref: non-code/arch/host/
 ### Step 2.2: Develop the MVP - @ALL
 
 Focus on the essential features for the initial launch to get feedback quickly.

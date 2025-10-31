@@ -3,6 +3,9 @@ import logging
 import os
 from typing import Dict, List, Optional, Tuple, Any
 import re
+import os
+import time
+from urllib.parse import urlencode
 
 from ..core.service import llm_service
 from ..core.utils import compact_json, strip_json_code_fences
@@ -51,6 +54,7 @@ class CandidateChatbot:
         "physical_condition": "physical condition",
         "interests": "areas of interest",
         "limitations": "limitations",
+        "confirm_profile": "confirmation",
     }
     NON_NAME_TOKENS = {
         "hi",
@@ -108,6 +112,131 @@ class CandidateChatbot:
         self.last_question = None  # Track the last question asked
         self.last_question_type = None  # Track the type of the last question
         self.enable_audio = enable_audio  # Whether to play audio responses
+        self.retry_counts: Dict[str, int] = {}
+        self._pending_correction: Optional[Dict[str, str]] = None
+        self._last_geo_lookup_ts: float = 0.0
+        self._profile_confirmed: bool = False
+
+    def _next_missing_field(self) -> Optional[str]:
+        for key in self.FIELD_KEYS:
+            if not self.candidate_info.get(key):
+                return key
+        return None
+
+    async def _auto_extract_all(self, message: str) -> set:
+        """Attempt to extract any missing fields from a single user message.
+
+        Only fills fields that are currently empty to avoid overwriting.
+        """
+        filled: set = set()
+        if not message:
+            return filled
+        schema = {
+            "full_name": "string",
+            "location": "string",
+            "age": "string",
+            "physical_condition": "string",
+            "interests": "string",
+            "limitations": "string",
+        }
+        try:
+            prompt = (
+                "Extract any of the following that the person clearly provided in the text. "
+                "Return null for items not present."
+                f" Text: {message}"
+            )
+            data = await llm_service.extract_structured_data(
+                prompt, schema, self.conversation_history, agent_role="chatbot"
+            )
+        except Exception:
+            data = {}
+
+        # Heuristics first for name/location/condition/limits/interests
+        if not self.candidate_info.get("full_name"):
+            name_inline = self._detect_full_name_from_message(message)
+            if name_inline:
+                self.candidate_info["full_name"] = name_inline
+                filled.add("full_name")
+        if not self.candidate_info.get("location"):
+            loc_inline = self._detect_location_from_message(message)
+            if loc_inline:
+                self.candidate_info["location"] = loc_inline
+                filled.add("location")
+        if not self.candidate_info.get("physical_condition"):
+            cond_inline = self._detect_physical_condition_from_message(message)
+            if cond_inline:
+                self.candidate_info["physical_condition"] = cond_inline
+                filled.add("physical_condition")
+        if not self.candidate_info.get("interests"):
+            interests_inline = self._detect_interests_from_message(message)
+            if interests_inline:
+                self.candidate_info["interests"] = interests_inline
+                filled.add("interests")
+        if not self.candidate_info.get("limitations"):
+            limits_inline = self._detect_limitations_from_message(message)
+            if limits_inline:
+                self.candidate_info["limitations"] = limits_inline
+                filled.add("limitations")
+
+        # LLM extraction fallback for anything still missing
+        try:
+            if not self.candidate_info.get("full_name") and data.get("full_name"):
+                self.candidate_info["full_name"] = str(data.get("full_name")).strip()
+                filled.add("full_name")
+            if not self.candidate_info.get("location") and data.get("location"):
+                raw_loc = str(data.get("location")).strip()
+                verified = self._validate_and_format_location(raw_loc)
+                self.candidate_info["location"] = verified or raw_loc
+                filled.add("location")
+            if not self.candidate_info.get("age") and data.get("age"):
+                # normalize age to number string
+                digits = re.findall(r"\d{1,3}", str(data.get("age")))
+                if digits:
+                    try:
+                        age_int = int(digits[0])
+                        if 10 <= age_int <= 120:
+                            self.candidate_info["age"] = str(age_int)
+                            filled.add("age")
+                    except ValueError:
+                        pass
+            if not self.candidate_info.get("physical_condition") and data.get("physical_condition"):
+                self.candidate_info["physical_condition"] = str(data.get("physical_condition")).strip()
+                filled.add("physical_condition")
+            if not self.candidate_info.get("interests") and data.get("interests"):
+                self.candidate_info["interests"] = str(data.get("interests")).strip()
+                filled.add("interests")
+            if not self.candidate_info.get("limitations") and data.get("limitations"):
+                self.candidate_info["limitations"] = self._normalize_limitations(str(data.get("limitations")).strip())
+                filled.add("limitations")
+        except Exception:
+            pass
+        return filled
+
+    def _advance_state_if_filled(self):
+        """Advance the conversation state past fields that are already filled."""
+        mapping = [
+            ("collecting_full_name", "full_name"),
+            ("collecting_location", "location"),
+            ("collecting_age", "age"),
+            ("collecting_physical_condition", "physical_condition"),
+            ("collecting_interests", "interests"),
+            ("collecting_limitations", "limitations"),
+        ]
+        # Iterate at most length of mapping to prevent infinite loops
+        for _ in range(len(mapping)):
+            progressed = False
+            for state, field in mapping:
+                if self.conversation_state == state and self.candidate_info.get(field):
+                    # Move to next logical state
+                    idx = [s for s, _ in mapping].index(state)
+                    if idx + 1 < len(mapping):
+                        self.conversation_state = mapping[idx + 1][0]
+                    else:
+                        self.conversation_state = "validating_profile"
+                    progressed = True
+                    break
+            if not progressed:
+                break
 
     def seed_profile(self, profile: Dict[str, Any]) -> None:
         """Seed the chatbot with a pre-existing user profile and move to confirmation state.
@@ -131,6 +260,207 @@ class CandidateChatbot:
             if parts:
                 return parts[0]
         return None
+
+    @staticmethod
+    def _detect_location_from_message(message: str) -> Optional[str]:
+        """Detect a likely location phrase without scooping other fields."""
+        if not message:
+            return None
+        sentences = re.split(r"[\.!?]+\s+", message)
+        leadins = re.compile(r"(?:\b(?:i(?:'m| am)?|i live|i reside|i work|i'm based|i am based|i'm located|i am located|based|located)\s+(?:in|at|near|around)\s+|\bfrom\s+)", re.IGNORECASE)
+        exclusion = re.compile(r"\b(health|condition|issues?|interests?|limitations?|remote|computer|drive|driving|teacher|wood|work\s+with\s+wood)\b", re.IGNORECASE)
+        for sent in sentences:
+            s = sent.strip()
+            if not s or exclusion.search(s):
+                continue
+            m = leadins.search(s)
+            if not m:
+                continue
+            candidate = s[m.end():]
+            candidate = re.split(r"[\.;!]\s*", candidate, maxsplit=1)[0]
+            candidate = candidate.strip(" ,.!?")
+            if not candidate or len(candidate) < 2 or len(candidate) > 80:
+                continue
+            if not re.search(r"[A-Za-z]", candidate):
+                continue
+            if re.search(r"\b(\d{2,4}\s*(years|yrs)\b|\bI\s+am\s+\d+\b)", candidate, re.IGNORECASE):
+                continue
+            return re.sub(r"\s+", " ", candidate)
+        return None
+
+    def _validate_and_format_location(self, candidate: str) -> Optional[str]:
+        """Optionally validate a free-text location using Nominatim and return a clean display string.
+
+        Controlled by env GEO_VALIDATE (default: on). Uses a short timeout and polite User-Agent.
+        """
+        if not candidate:
+            return None
+        # Basic clean-up
+        q = re.sub(r"\s+", " ", candidate).strip(" ,")
+        if not q or len(q) < 2:
+            return None
+        # Skip network if disabled
+        enabled = os.getenv("GEO_VALIDATE", "1") not in {"0", "false", "False"}
+        if not enabled:
+            return q
+        # Rate-limit a bit to be polite
+        now = time.time()
+        if now - getattr(self, "_last_geo_lookup_ts", 0) < 1.0:
+            return q
+        self._last_geo_lookup_ts = now
+        try:
+            import requests
+            params = {"q": q, "format": "json", "addressdetails": 1, "limit": 1}
+            url = f"https://nominatim.openstreetmap.org/search?{urlencode(params)}"
+            headers = {"User-Agent": "SilverStar-Asteroid/1.0 (contact: support@silverstar.local)"}
+            resp = requests.get(url, headers=headers, timeout=4)
+            if resp.ok:
+                data = resp.json()
+                if isinstance(data, list) and data:
+                    item = data[0]
+                    display = item.get("display_name") or q
+                    # Try to format as City, State, Country when possible
+                    addr = item.get("address") or {}
+                    parts = [addr.get("city") or addr.get("town") or addr.get("village") or addr.get("municipality"), addr.get("state"), addr.get("country")]
+                    compact = ", ".join([p for p in parts if p])
+                    return compact or display or q
+        except Exception:
+            return q
+        return q
+
+    @staticmethod
+    def _detect_physical_condition_from_message(message: str) -> Optional[str]:
+        """Heuristically detect a physical condition summary from a message."""
+        if not message:
+            return None
+        phys_patterns = [
+            r"\bphysical\s+condition\s*(?:is|:)?\s*([^.!?]{2,120})",
+            r"\b(?:health|health\s+problems|medical\s+issues)\s*(?:is|are|:)?\s*([^.!?]{2,120})",
+            r"\b(?:in|with)\s+(?:excellent|good|fair|poor)\s+(?:health|shape|condition)\b",
+            r"\bno\s+health\s+problems?\b",
+        ]
+        for pattern in phys_patterns:
+            m = re.search(pattern, message, re.IGNORECASE)
+            if m:
+                value = m.group(1) if m.lastindex else m.group(0)
+                value = re.sub(r"\s+", " ", value).strip(" .,!")
+                if value:
+                    return value
+        return None
+
+    @staticmethod
+    def _detect_common_corrections(field: str, value: str) -> Optional[str]:
+        """Detect simple, high-confidence typo corrections for specific fields.
+
+        Returns the corrected string if a likely typo was found; otherwise None.
+        """
+        if not value:
+            return None
+        text = value
+        # Physical condition: common 'no' -> 'ho' slip
+        if field == "physical_condition":
+            corrected = re.sub(r"\b[hg]o\s+health\b", "no health", text, flags=re.IGNORECASE)
+            if corrected != text:
+                return corrected
+        return None
+
+    def _maybe_confirm_correction(self, field: str, original: str, corrected: str) -> Optional[str]:
+        """Ask the user to confirm an auto-correction. Returns a prompt if asked."""
+        if not corrected or corrected.strip().lower() == original.strip().lower():
+            return None
+        label = self.FIELD_LABEL_MAP.get(field, field.replace("_", " "))
+        self._pending_correction = {
+            "field": field,
+            "original": original,
+            "corrected": corrected,
+        }
+        prompt = (
+            f"Just to confirm, for your {label}, did you mean \"{corrected}\" instead of \"{original}\"? "
+            "You can say yes or no."
+        )
+        self.last_question = prompt
+        self.last_question_type = "confirm_correction"
+        return prompt
+
+    @staticmethod
+    def _detect_interests_from_message(message: str) -> Optional[str]:
+        """Detect interests from free text (e.g., "I'd like to be a teacher")."""
+        if not message:
+            return None
+        patterns = [
+            r"\b(?:i\s+would\s+like\s+to\s+be|i\s+want\s+to\s+be|i['\s]m\s+interested\s+in|i\s+am\s+interested\s+in|i\s+like\s+to\s+work\s+as|my\s+interests\s+are)\s+([^.!?]{2,120})",
+            r"^\s*(teacher|tutor|driver|cashier|nurse|caregiver|coordinator)\s*$",
+        ]
+        for pat in patterns:
+            m = re.search(pat, message, re.IGNORECASE)
+            if m:
+                val = (m.group(1) if m.lastindex else m.group(0)).strip(" .,!")
+                return re.sub(r"\s+", " ", val)
+        return None
+
+    @staticmethod
+    def _normalize_limitations(value: str) -> str:
+        """Normalize common limitation phrasings to avoid inversions (e.g., remote)."""
+        if not value:
+            return value
+        text = value.lower()
+        # Remote work negatives
+        remote_negative = any(
+            phrase in text
+            for phrase in [
+                "not remote",
+                "no remote",
+                "don't want to work remotely",
+                "do not want to work remotely",
+                "no remote work",
+                "prefer in-person",
+                "in person only",
+                "on-site only",
+                "onsite only",
+                "not work remotely",
+                "avoid remote",
+            ]
+        )
+        if remote_negative:
+            return "prefers non-remote (in-person); no remote work"
+        return value
+
+    @staticmethod
+    def _detect_limitations_from_message(message: str) -> Optional[str]:
+        """Detect limitations, with special handling for remote preference negatives."""
+        if not message:
+            return None
+        patterns = [
+            r"\b(?:not|no)\s+remote\b",
+            r"\bprefer\s+(?:no|not)\s+remote\b",
+            r"\b(?:in\s*person|on-?site|onsite)\s+only\b",
+            r"\b(?:do\s+not|don't)\s+want\s+to\s+work\s+remotely\b",
+            r"\b(?:do\s+not|don't)\s+want\s+to\s+work\s+on\s+the\s+computer\b",
+            r"\b(?:no|not)\s+(?:computer\s+work|working\s+on\s+the\s+computer)\b",
+            r"\b(?:do\s+not|don't)\s+want\s+(?:a|any)?\s*remote\s+job\b",
+            r"\bno\s+remote\s+jobs?\b",
+            r"\b(?:cannot|can't|do\s+not\s+want\s+to)\s+lift\s+\d+\s*(?:lbs|pounds)?\b",
+            r"\bprefer\s+to\s+avoid\s+([^.!?]{2,120})",
+            r"\b(?:do\s+not|don't)\s+want\s+to\s+drive\s+(?:to\s+work\s+)?for\s+more\s+than\s+\d+\s*(?:hours?|hrs?)\b",
+            r"\b(?:commute|driv(?:e|ing))\s+(?:over|more\s+than)\s+\d+\s*(?:hours?|hrs?)\b",
+        ]
+        for pat in patterns:
+            m = re.search(pat, message, re.IGNORECASE)
+            if m:
+                val = (m.group(1) if m.lastindex else m.group(0)).strip(" .,!")
+                norm = CandidateChatbot._normalize_limitations(val)
+                return norm
+        return None
+
+    def _wants_jobs_now(self, text: str) -> bool:
+        if not text:
+            return False
+        t = text.lower()
+        keywords = [
+            "jobs", "positions", "openings", "opportunities",
+            "offer me jobs", "find jobs", "show jobs", "recommend jobs",
+        ]
+        return any(k in t for k in keywords)
     
     def _conversation_snippet(self, turns: int = 6) -> str:
         """Return the last few conversation turns formatted for prompts."""
@@ -225,6 +555,70 @@ class CandidateChatbot:
         validated_value = None
         # If we asked a question in the previous turn, validate the answer
         if self.last_question and self.last_question_type:
+            # Handle pending correction confirmation first
+            if self.last_question_type == "confirm_correction" and self._pending_correction:
+                norm = (message or "").strip().lower()
+                yes = {"yes", "yep", "yeah", "correct", "right", "ok", "okay"}
+                no = {"no", "nope", "nah", "incorrect", "wrong"}
+                if any(w == norm or norm.startswith(w) for w in yes):
+                    fld = self._pending_correction["field"]
+                    val = self._pending_correction["corrected"]
+                    self.candidate_info[fld] = val
+                    self._pending_correction = None
+                    self.last_question = None
+                    self.last_question_type = None
+                    # Continue as normal after applying
+                elif any(w == norm or norm.startswith(w) for w in no):
+                    # Keep original, discard correction
+                    self._pending_correction = None
+                    self.last_question = None
+                    self.last_question_type = None
+                else:
+                    # Ask again briefly
+                    response = "Please reply yes or no so I can confirm the correction."
+                    self.conversation_history.append({"role": "assistant", "content": response})
+                    return response, self.candidate_info
+
+            # Handle explicit name confirmation flow
+            if self.last_question_type == "confirm_name":
+                norm = (message or "").strip().lower()
+                yes = {"yes", "yep", "yeah", "correct", "right", "ok", "okay"}
+                no = {"no", "nope", "nah", "incorrect", "wrong"}
+                if any(w == norm or norm.startswith(w) for w in yes):
+                    # Name confirmed; proceed to next field
+                    preferred_name = self._preferred_name()
+                    # Decide next step based on whether location already exists
+                    if self.candidate_info.get("location"):
+                        self.conversation_state = "collecting_age"
+                        name_fragment = f", {preferred_name}" if preferred_name else ""
+                        response = f"Great{name_fragment}! To make sure opportunities are appropriate, could you share your age?"
+                        self.last_question = response
+                        self.last_question_type = "age"
+                    else:
+                        self.conversation_state = "collecting_location"
+                        display_name = preferred_name or (self.candidate_info.get("full_name") or "")
+                        response = f"Nice to meet you, {display_name}! Where are you currently located?"
+                        self.last_question = response
+                        self.last_question_type = "location"
+                    self.conversation_history.append({"role": "assistant", "content": response})
+                    if self.enable_audio:
+                        await self._play_response_audio(response)
+                    return response, self.candidate_info
+                elif any(w == norm or norm.startswith(w) for w in no):
+                    # Ask for the correct name
+                    self.conversation_state = "collecting_full_name"
+                    response = "Thanks for clarifying. What is your full name?"
+                    self.last_question = response
+                    self.last_question_type = "full_name"
+                    self.conversation_history.append({"role": "assistant", "content": response})
+                    if self.enable_audio:
+                        await self._play_response_audio(response)
+                    return response, self.candidate_info
+                else:
+                    response = "Please reply yes or no: is that your correct full name?"
+                    self.conversation_history.append({"role": "assistant", "content": response})
+                    return response, self.candidate_info
+
             validation_result = await answer_validator.validate_answer(
                 self.last_question,
                 message,
@@ -237,26 +631,59 @@ class CandidateChatbot:
                 validated_value = validation_result.get("extracted_value")
                 if isinstance(validated_value, str):
                     validated_value = validated_value.strip()
+                # Clear retry count on success
+                if self.last_question_type:
+                    self.retry_counts[self.last_question_type] = 0
             else:
-                prompt = f"""
-                You are a job recruitment assistant for Silver Star.
-                The user didn't answer your question properly.
-                Ask them the same question again in a different way.
-                Do not mention being an AI or assistant.
-                Your previous question was: "{self.last_question}"
-                """
-                
-                response = await llm_service.generate_response(prompt)
+                # Stuck-loop breaker: escalate clarity after 2 attempts
+                qtype = self.last_question_type
+                self.retry_counts[qtype] = self.retry_counts.get(qtype, 0) + 1
+
+                # Allow user to skip
+                if message.strip().lower() == "skip":
+                    # Move on without setting the field
+                    self.last_question = None
+                    self.last_question_type = None
+                    self.conversation_state = "validating_profile"
+                    return await self._validate_profile(), self.candidate_info
+
+                if self.retry_counts[qtype] >= 2:
+                    if qtype == "confirm_profile":
+                        # Provide a clear summary for confirmation instead of a generic ask
+                        summary = self._profile_summary_snippet()
+                        response = (
+                            f"Let's confirm your details: {summary}. Is everything correct? You can say 'yes' or 'no'."
+                        )
+                        self.conversation_history.append({"role": "assistant", "content": response})
+                        if self.enable_audio:
+                            await self._play_response_audio(response)
+                        self.last_question = response
+                        return response, self.candidate_info
+                    label = self.FIELD_LABEL_MAP.get(qtype, qtype.replace("_", " "))
+                    examples = {
+                        "full_name": "e.g., 'Jane Doe'",
+                        "location": "e.g., 'Boston, MA'",
+                        "age": "e.g., '65'",
+                        "physical_condition": "e.g., 'excellent health'",
+                        "interests": "e.g., 'teaching'",
+                        "limitations": "e.g., 'no remote work'",
+                    }
+                    example = examples.get(qtype, "")
+                    response = (
+                        f"I still need your {label}. {example} If you'd rather come back to this later, say 'skip'."
+                    )
+                else:
+                    # Re-ask simply without LLM to avoid repetition loops
+                    if self.last_question_type == "confirm_profile":
+                        response = "Could you please share your confirmation for your details overview?"
+                    else:
+                        label = self.FIELD_LABEL_MAP.get(self.last_question_type, self.last_question_type)
+                        response = f"Could you please share your {label}?"
+
                 self.conversation_history.append({"role": "assistant", "content": response})
-                
-                # Play the response as audio if enabled
                 if self.enable_audio:
                     await self._play_response_audio(response)
-                
-                # Update the last question
                 self.last_question = response
-                # Keep the same question type
-                
                 return response, self.candidate_info
         
         inline_name = None
@@ -268,15 +695,36 @@ class CandidateChatbot:
             if inline_name != current_name and (self.conversation_state in {"collecting_full_name"} or name_mentioned or not current_name):
                 self.candidate_info["full_name"] = inline_name
 
+        # Try to auto-fill any missing fields from this message
+        filled_now = await self._auto_extract_all(message)
+        # If we just filled what we were asking about, clear the pending question
+        if self.last_question_type and self.last_question_type in filled_now:
+            self.last_question = None
+            self.last_question_type = None
+        # Advance state if the currently awaited field is already filled
+        self._advance_state_if_filled()
+
         # Process based on current conversation state
         if self.conversation_state == "greeting":
             detected_name = self._detect_full_name_from_message(message)
             if detected_name:
                 self.candidate_info["full_name"] = detected_name
-                self.conversation_state = "collecting_location"
-                response = f"Nice to meet you, {detected_name}! Where are you currently located?"
-                self.last_question = response
-                self.last_question_type = "location"
+                # Try to also detect location from the same message to avoid re-asking
+                inline_location = self._detect_location_from_message(message)
+                if inline_location:
+                    verified = self._validate_and_format_location(inline_location)
+                    self.candidate_info["location"] = verified or inline_location
+                    self.conversation_state = "collecting_age"
+                    preferred_name = self._preferred_name()
+                    name_fragment = f", {preferred_name}" if preferred_name else ""
+                    response = f"Thanks{name_fragment}! To make sure opportunities are appropriate, could you share your age?"
+                    self.last_question = response
+                    self.last_question_type = "age"
+                else:
+                    self.conversation_state = "collecting_location"
+                    response = f"Nice to meet you, {detected_name}! Where are you currently located?"
+                    self.last_question = response
+                    self.last_question_type = "location"
             else:
                 response = await self._handle_greeting()
         elif self.conversation_state == "confirming_profile":
@@ -302,9 +750,21 @@ class CandidateChatbot:
         elif self.conversation_state == "recommending_jobs":
             response = await self._recommend_jobs()
         else:
-            response = await self._handle_general_query(message)
+            # If the user asks for jobs directly and we have enough info, jump to recommendations
+            if self._wants_jobs_now(message) and (self.candidate_info.get("location") or self.candidate_info.get("interests")):
+                self.conversation_state = "recommending_jobs"
+                response = await self._recommend_jobs()
+            else:
+                response = await self._handle_general_query(message)
         
-        # Add bot response to history
+        # Add bot response to history and ensure it ends with a CTA or question
+        try:
+            r = (response or "").rstrip()
+            if "?" not in r:
+                r = r + "\nWhat would you like to do next?"
+            response = r
+        except Exception:
+            pass
         self.conversation_history.append({"role": "assistant", "content": response})
         
         # Play the response as audio if enabled
@@ -329,6 +789,7 @@ class CandidateChatbot:
         }
 
         prompt = f"""
+        Your name is Asteroid, you are the 'Silver Star' job platform helpful recruitment chatbot assistant.
         You help maintain an intake profile for a community job placement program.
         Determine whether the candidate is intentionally providing a new value for the field "{label}".
 
@@ -355,10 +816,11 @@ class CandidateChatbot:
             decision = await llm_service.extract_structured_data(
                 prompt,
                 schema,
-                self.conversation_history
+                self.conversation_history,
+                agent_role="chatbot"
             )
         except Exception as exc:  # pylint: disable=broad-except
-            logger.error("LLM judge failed: %s", exc)
+            logger.error("[chatbot.py] LLM judge failed: %s", exc)
             return {"should_replace": False, "confidence": 0.0, "reason": "judge_error"}
 
         raw_should = decision.get("should_replace")
@@ -376,7 +838,7 @@ class CandidateChatbot:
 
         reason = decision.get("reason") or "no_reason_provided"
         logger.info(
-            "Field change judge result | field=%s | should_replace=%s | confidence=%.2f | reason=%s | proposed=%s",
+            "[chatbot.py] Field change judge result | field=%s | should_replace=%s | confidence=%.2f | reason=%s | proposed=%s",
             field,
             should_replace,
             confidence_value,
@@ -402,7 +864,7 @@ class CandidateChatbot:
         try:
             await audio_player.play_text(response)
         except Exception as e:
-            logger.error(f"Error playing audio response: {str(e)}")
+            logger.error(f"[chatbot.py] Error playing audio response: {str(e)}")
 
     def _profile_summary_snippet(self) -> str:
         parts = []
@@ -415,7 +877,24 @@ class CandidateChatbot:
 
     async def _confirm_profile(self, message: str) -> str:
         """Handle the profile confirmation flow."""
-        # If we haven't asked yet, present the summary and ask for confirmation
+        # Before asking for confirmation, check what we actually have
+        missing = [key for key in self.FIELD_KEYS if not self.candidate_info.get(key)]
+
+        # If nothing is filled in, skip confirmation and start collecting from the top
+        if len(missing) == len(self.FIELD_KEYS):
+            self.conversation_state = "collecting_full_name"
+            response = "Let's get started. Could you please share your full name?"
+            self.last_question = response
+            self.last_question_type = "full_name"
+            return response
+
+        # If some fields are missing but not all, ask only for the next missing field
+        if missing:
+            next_field = missing[0]
+            self.conversation_state = self.FIELD_STATE_MAP.get(next_field, "collecting_full_name")
+            return await self._ask_for_field(next_field)
+
+        # If we have all fields, proceed to validation/summary as usual
         if self.last_question_type != "confirm_profile":
             summary = self._profile_summary_snippet()
             prompt = (
@@ -430,8 +909,11 @@ class CandidateChatbot:
         if not normalized:
             return "Could you confirm if your profile details are correct, or tell me what to update?"
 
-        affirmative = {"yes", "yep", "yeah", "correct", "all good", "looks good", "good", "ok", "okay"}
-        negative = {"no", "nope", "not quite", "update", "change", "edit"}
+        affirmative = {
+            "yes", "yep", "yeah", "correct", "all good", "looks good", "good", "ok", "okay",
+            "confirm", "i confirm", "confirmed", "that is correct", "that's correct"
+        }
+        negative = {"no", "nope", "not quite", "update", "change", "edit", "fix", "modify"}
 
         if any(word in normalized for word in affirmative):
             # Proceed to validation to fill any gaps, else move to profile_complete
@@ -505,9 +987,17 @@ class CandidateChatbot:
     
     async def _handle_greeting(self) -> str:
         """Handle the initial greeting."""
+        # If we already have a name on file, confirm it first
+        name = (self.candidate_info.get("full_name") or "").strip() if isinstance(self.candidate_info.get("full_name"), str) else None
+        if name:
+            self.conversation_state = "collecting_full_name"
+            response = f"Hello! I have your full name as '{name}'. Is that correct?"
+            self.last_question = response
+            self.last_question_type = "confirm_name"
+            return response
+        # Otherwise, ask for the user's full name
         self.conversation_state = "collecting_full_name"
-        
-        response = "Hello! I'm your Asteroid, Silver Star assistant. Could you please share your full name so we can get started?"
+        response = "Hello! My name is Asteroid, I am the Silver Star job platform chatbot assistant. Could you please share your full name so we can get started?"
         self.last_question = response
         self.last_question_type = "full_name"
         return response
@@ -527,6 +1017,17 @@ class CandidateChatbot:
 
         if extracted_name:
             self.candidate_info["full_name"] = extracted_name
+            # Try to capture location from the same message to skip redundant prompt
+            inline_location = self._detect_location_from_message(message)
+            if inline_location:
+                self.candidate_info["location"] = inline_location
+                self.conversation_state = "collecting_age"
+                preferred_name = self._preferred_name()
+                name_fragment = f", {preferred_name}" if preferred_name else ""
+                response = f"Thanks{name_fragment}! To make sure opportunities are appropriate, could you share your age?"
+                self.last_question = response
+                self.last_question_type = "age"
+                return response
             self.conversation_state = "collecting_location"
             response = f"Nice to meet you, {extracted_name}! Where are you currently located?"
             self.last_question = response
@@ -544,7 +1045,7 @@ class CandidateChatbot:
             """
 
             extracted = await llm_service.extract_structured_data(
-                extraction_prompt, schema, self.conversation_history
+                extraction_prompt, schema, self.conversation_history, agent_role="chatbot"
             )
 
             candidate_name = extracted.get("full_name") if extracted else None
@@ -561,7 +1062,7 @@ class CandidateChatbot:
             self.last_question_type = "full_name"
             return response
         except Exception as e:
-            logger.error(f"Error extracting full name: {str(e)}")
+            logger.error(f"[chatbot.py] Error extracting full name: {str(e)}")
             response = "I'm having trouble understanding. Could you please tell me your full name?"
             self.last_question = response
             self.last_question_type = "full_name"
@@ -571,6 +1072,19 @@ class CandidateChatbot:
         """Extract the candidate's location from their message."""
         schema = {"location": "string"}
         location = None
+        
+        def _extract_age_inline(text: str) -> Optional[str]:
+            if not text:
+                return None
+            digits = re.findall(r"\b(\d{1,3})\b", text)
+            for d in digits:
+                try:
+                    val = int(d)
+                    if 10 <= val <= 120:
+                        return str(val)
+                except ValueError:
+                    continue
+            return None
         
         if validated_value:
             location = validated_value.strip(" .,!")
@@ -603,16 +1117,35 @@ class CandidateChatbot:
                 """
                 
                 extracted = await llm_service.extract_structured_data(
-                    extraction_prompt, schema, self.conversation_history
+                    extraction_prompt, schema, self.conversation_history, agent_role="chatbot"
                 )
                 
                 if extracted.get("location"):
                     location = extracted["location"].strip(" .,!")
             
             if location:
-                self.candidate_info["location"] = location
-                self.conversation_state = "collecting_age"
+                verified = self._validate_and_format_location(location)
+                self.candidate_info["location"] = verified or location
+                # Try to capture age from the same message to avoid re-asking
+                inline_age = _extract_age_inline(message)
+                if inline_age:
+                    self.candidate_info["age"] = inline_age
+                    # Proceed to physical condition next
+                    inline_condition = self._detect_physical_condition_from_message(message)
+                    if inline_condition:
+                        self.candidate_info["physical_condition"] = inline_condition
+                        self.conversation_state = "collecting_interests"
+                        response = "Thanks for sharing. What kinds of activities or roles are you most interested in doing?"
+                        self.last_question = response
+                        self.last_question_type = "interests"
+                        return response
+                    self.conversation_state = "collecting_physical_condition"
+                    response = "Thank you. Could you describe your current physical condition or anything I should keep in mind?"
+                    self.last_question = response
+                    self.last_question_type = "physical_condition"
+                    return response
 
+                self.conversation_state = "collecting_age"
                 preferred_name = self._preferred_name()
                 name_fragment = f", {preferred_name}" if preferred_name else ""
                 response = f"Thanks{name_fragment}! To make sure opportunities are appropriate, could you share your age?"
@@ -625,7 +1158,7 @@ class CandidateChatbot:
                 self.last_question_type = "location"
                 return response
         except Exception as e:
-            logger.error(f"Error extracting location: {str(e)}")
+            logger.error(f"[chatbot.py] Error extracting location: {str(e)}")
             
             response = "I'm having trouble understanding. Could you please tell me your location?"
             self.last_question = response
@@ -664,15 +1197,25 @@ class CandidateChatbot:
                 """
 
                 extracted = await llm_service.extract_structured_data(
-                    extraction_prompt, schema, self.conversation_history
+                    extraction_prompt, schema, self.conversation_history, agent_role="chatbot"
                 )
 
                 age_value = normalize_age(extracted.get("age") if extracted else None)
             except Exception as e:
-                logger.error(f"Error extracting age: {str(e)}")
+                logger.error(f"[chatbot.py] Error extracting age: {str(e)}")
 
         if age_value:
             self.candidate_info["age"] = age_value
+            # Try to detect physical condition if provided in the same message
+            inline_condition = self._detect_physical_condition_from_message(message)
+            if inline_condition:
+                self.candidate_info["physical_condition"] = inline_condition
+                self.conversation_state = "collecting_interests"
+                response = "Thanks for sharing. What kinds of activities or roles are you most interested in doing?"
+                self.last_question = response
+                self.last_question_type = "interests"
+                return response
+
             self.conversation_state = "collecting_physical_condition"
 
             response = "Thank you. Could you describe your current physical condition or anything I should keep in mind?"
@@ -700,14 +1243,30 @@ class CandidateChatbot:
                 """
 
                 extracted = await llm_service.extract_structured_data(
-                    extraction_prompt, schema, self.conversation_history
+                    extraction_prompt, schema, self.conversation_history, agent_role="chatbot"
                 )
                 condition = extracted.get("physical_condition") if extracted else None
 
             if condition:
-                self.candidate_info["physical_condition"] = condition.strip()
-                self.conversation_state = "collecting_interests"
+                condition = condition.strip()
+                # Check for simple, high-confidence typo corrections
+                corrected = self._detect_common_corrections("physical_condition", condition)
+                if corrected:
+                    maybe = self._maybe_confirm_correction("physical_condition", condition, corrected)
+                    if maybe:
+                        return maybe
+                self.candidate_info["physical_condition"] = condition
+                # Also attempt to capture interests from the same message to avoid re-asking
+                inline_interests = self._detect_interests_from_message(message)
+                if inline_interests:
+                    self.candidate_info["interests"] = inline_interests
+                    self.conversation_state = "collecting_limitations"
+                    response = "That's helpful. Are there any limitations or things you prefer to avoid so we can plan around them?"
+                    self.last_question = response
+                    self.last_question_type = "limitations"
+                    return response
 
+                self.conversation_state = "collecting_interests"
                 response = "Thanks for sharing. What kinds of activities or roles are you most interested in doing?"
                 self.last_question = response
                 self.last_question_type = "interests"
@@ -718,7 +1277,7 @@ class CandidateChatbot:
             self.last_question_type = "physical_condition"
             return response
         except Exception as e:
-            logger.error(f"Error extracting physical condition: {str(e)}")
+            logger.error(f"[chatbot.py] Error extracting physical condition: {str(e)}")
 
             response = "I'm having trouble understanding. Could you tell me a bit about your physical condition?"
             self.last_question = response
@@ -744,10 +1303,43 @@ class CandidateChatbot:
                 )
                 interests = extracted.get("interests") if extracted else None
 
-            if interests:
-                self.candidate_info["interests"] = interests.strip()
-                self.conversation_state = "collecting_limitations"
+            def _strip_limitation_phrases(text: str) -> str:
+                if not text:
+                    return text
+                patterns = [
+                    r"\b(?:not|no)\s+remote\b",
+                    r"\bprefer\s+(?:no|not)\s+remote\b",
+                    r"\b(?:in\s*person|on-?site|onsite)\s+only\b",
+                    r"\b(?:do\s+not|don't)\s+want\s+to\s+work\s+remotely\b",
+                    r"\bno\s+computer(?:\s+work)?\b",
+                    r"\bnot\s+work\s+on\s+the\s+computer\b",
+                    r"\bno\s+more\s+than\s+\d+\s*(?:hours|hrs)\b",
+                ]
+                out = text
+                for pat in patterns:
+                    out = re.sub(pat, "", out, flags=re.IGNORECASE)
+                # Clean connective leftovers
+                out = re.sub(r"\s+(?:and|or)\s*$", "", out.strip())
+                out = re.sub(r"\s{2,}", " ", out)
+                return out.strip(" ,.")
 
+            if interests:
+                # First, check for limitations in the same message
+                inline_limits = self._detect_limitations_from_message(message)
+                if inline_limits and not self.candidate_info.get("limitations"):
+                    self.candidate_info["limitations"] = inline_limits
+
+                cleaned_interests = _strip_limitation_phrases(interests)
+                if cleaned_interests:
+                    self.candidate_info["interests"] = cleaned_interests
+                # If interests were entirely limitation phrases, keep previous interests unchanged
+
+                if inline_limits:
+                    # We already captured limitations; proceed to validation
+                    self.conversation_state = "validating_profile"
+                    return await self._validate_profile()
+
+                self.conversation_state = "collecting_limitations"
                 response = "That's helpful. Are there any limitations or things you prefer to avoid so we can plan around them?"
                 self.last_question = response
                 self.last_question_type = "limitations"
@@ -758,7 +1350,7 @@ class CandidateChatbot:
             self.last_question_type = "interests"
             return response
         except Exception as e:
-            logger.error(f"Error extracting interests: {str(e)}")
+            logger.error(f"[chatbot.py] Error extracting interests: {str(e)}")
 
             response = "I'm having trouble understanding. Could you share the kinds of things you would like to do?"
             self.last_question = response
@@ -785,14 +1377,22 @@ class CandidateChatbot:
                 limitations = extracted.get("limitations") if extracted else None
 
             if limitations:
-                self.candidate_info["limitations"] = limitations.strip()
+                proposed = self._normalize_limitations(limitations.strip())
+                # sanity: do not accept if this clearly looks like a location or interest spillover
+                if re.search(r"\b(Boston|MA|USA|street|road|avenue|interest|teaching|wood)\b", proposed, re.IGNORECASE):
+                    # Ask for clarification instead of setting a wrong value
+                    response = "Could you confirm your limitations (e.g., 'no remote work', 'no driving over 3 hours')?"
+                    self.last_question = response
+                    self.last_question_type = "limitations"
+                    return response
+                self.candidate_info["limitations"] = proposed
             else:
                 self.candidate_info["limitations"] = None
 
             self.conversation_state = "validating_profile"
             return await self._validate_profile()
         except Exception as e:
-            logger.error(f"Error extracting limitations: {str(e)}")
+            logger.error(f"[chatbot.py] Error extracting limitations: {str(e)}")
 
             response = "I'm having trouble understanding. Could you share any limitations we should be aware of? If there are none, feel free to say so."
             self.last_question = response
@@ -813,13 +1413,13 @@ class CandidateChatbot:
                 self.conversation_state = self.FIELD_STATE_MAP.get(next_field, "collecting_full_name")
 
                 follow_up_prompt = f"""
-                You are a job recruitment assistant for Silver Star.
+                Your name is Asteroid, you are the 'Silver Star' job platform helpful recruitment chatbot assistant.
                 Let the candidate know we still need their {field_label}.
                 Ask politely for that information in a single short message.
                 Do not mention being an AI or assistant.
                 """
 
-                response = await llm_service.generate_response(follow_up_prompt)
+                response = await llm_service.generate_response(follow_up_prompt, agent_role="chatbot")
                 self.last_question = response
                 self.last_question_type = self.FIELD_TYPE_MAP.get(next_field, next_field)
                 return response
@@ -838,9 +1438,9 @@ class CandidateChatbot:
             Craft a concise, friendly summary of this candidate profile for Silver Star:
             {profile_snapshot}
             """
-            summary = await llm_service.generate_response(summary_prompt)
+            summary = await llm_service.generate_response(summary_prompt, agent_role="chatbot")
 
-        message_parts = [summary.strip()]
+        message_parts = []
         if issues:
             issues_text = "Here are a few notes I noticed:\n" + "\n".join(f"- {issue}" for issue in issues)
             message_parts.append(issues_text)
@@ -856,12 +1456,21 @@ class CandidateChatbot:
         else:
             self.candidate_info["executive_summary"] = None
             self.candidate_info["job_suggestions"] = None
+            # Only include the basic validation summary if we do not have an executive summary
+            if summary:
+                message_parts.insert(0, summary.strip())
 
+        # Automatically generate job recommendations after validation
         recommendations = await self._recommend_jobs()
         if recommendations:
             message_parts.append(recommendations)
+        if not message_parts:
+            # Fallback: ensure we always respond with something useful
+            snapshot = self._profile_summary_snippet()
+            message_parts.append(f"I've recorded your details: {snapshot}.")
+            message_parts.append("Would you like me to generate job suggestions now?")
         message_parts.append(
-            "I've saved these details. If anything looks off, please edit it directly in the profile panel or let me know."
+            "I've saved these details. If anything looks off, please edit it directly in the profile panel or tell me what to change."
         )
 
         self.conversation_state = "profile_complete"
@@ -882,6 +1491,7 @@ class CandidateChatbot:
         }
 
         prompt = f"""
+        Your name is Asteroid, you are the 'Silver Star' job platform helpful recruitment chatbot assistant.
         You are preparing an executive summary for a job placement team.
 
         Candidate profile:
@@ -907,6 +1517,8 @@ class CandidateChatbot:
         - suggested_roles should contain between 2 and 4 entries tailored to the profile.
         - next_steps must contain at least one actionable suggestion.
         - Keep language plain and free from markdown.
+        - Strictly honor explicit constraints in "limitations". If the candidate says they do not want remote work,
+          reflect that as a non-remote preference and DO NOT invert it into a remote preference.
         """
 
         try:
@@ -927,7 +1539,7 @@ class CandidateChatbot:
 
             return parsed
         except Exception as exc:  # pylint: disable=broad-except
-            logger.error("Error generating executive summary: %s", exc)
+            logger.error("[chatbot.py] Error generating executive summary: %s", exc)
             return None
     
     async def _recommend_jobs(self) -> str:
@@ -953,12 +1565,14 @@ class CandidateChatbot:
                         )
                         
                         if job_details:
-                            recommendation_text += f"{i}. **{job_details['title']}** at {job_details['company'] or 'A great company'}\n"
+                            recommendation_text += f"{i}. {job_details['title']} at {job_details['company'] or 'A great company'}\n"
                             recommendation_text += f"   Location: {job_details['location'] or 'Various locations'}\n"
                             recommendation_text += f"   Match Score: {rec['match_score']}%\n"
                             recommendation_text += f"   Why it's a good fit: {rec['match_reason']}\n\n"
                     
-                    recommendation_text += "Would you like more details about any of these positions, or would you like to see more recommendations?"
+                    recommendation_text = "\n===BEGIN_RECS===\n" + recommendation_text
+                    recommendation_text += "Would you like more details about any of these positions, or would you like to see more recommendations?\n"
+                    recommendation_text += "===END_RECS===\n"
                     
                     return recommendation_text
                 else:
@@ -979,12 +1593,18 @@ class CandidateChatbot:
                 3. Location
                 4. Brief description of why it's a good fit
                 
+                Important constraints:
+                - Respect the candidate's "limitations" strictly. If they state they do NOT want remote work, only suggest non-remote (in-person) roles.
+                - Do not contradict the profile; never invert negative preferences into positives.
+                
                 Format your response in a friendly, conversational way.
                 """
                 
-                return await llm_service.generate_response(prompt)
+                text = await llm_service.generate_response(prompt, agent_role="chatbot")
+                # Wrap fallback block so UI preserves newlines nicely
+                return "\n===BEGIN_RECS===\n" + text + "\n===END_RECS===\n"
         except Exception as e:
-            logger.error(f"Error generating job recommendations: {str(e)}")
+            logger.error(f"[chatbot.py] Error generating job recommendations: {str(e)}")
             
             # Fallback to a generic response
             return "I'm having trouble finding specific job recommendations right now. Based on your profile, I'd suggest looking for positions that match your skills and availability. Would you like me to provide some general job search advice instead?"
@@ -992,14 +1612,14 @@ class CandidateChatbot:
     async def _handle_general_query(self, message: str) -> str:
         """Handle general queries outside the main conversation flow."""
         prompt = f"""
-        You are a helpful job recruitment assistant for Silver Star.
+        Your name is Asteroid, you are the 'Silver Star' job platform helpful recruitment chatbot assistant.
         The user has asked: "{message}"
         
         Provide a helpful response. If they seem to want to restart the conversation,
         suggest starting over by asking for their name again.
         """
         
-        return await llm_service.generate_response(prompt)
+        return await llm_service.generate_response(prompt, agent_role="chatbot")
 
     async def apply_manual_update(self, updates: Dict[str, Any]) -> str:
         """Apply manual profile adjustments and re-validate."""

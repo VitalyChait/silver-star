@@ -1,15 +1,39 @@
 #!/bin/bash
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && cd "$SCRIPT_DIR" && pwd)"
+# Resolve important paths
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname $SCRIPT_DIR)"
 LOG_DIR="$REPO_DIR/logs"
 
-# Default ports
-DEFAULT_FRONTEND_PORT=3000
-DEFAULT_BACKEND_PORT=8000
+ENV_FILE="$REPO_DIR/code/.env"
 
-# Get current ports or use defaults
-FRONTEND_PORT=$(cat "$LOG_DIR/.frontend_port.log" 2>/dev/null || echo "$DEFAULT_FRONTEND_PORT")
-BACKEND_PORT=$(cat "$LOG_DIR/.backend_port.log" 2>/dev/null || echo "$DEFAULT_BACKEND_PORT")
+# Simple colored log helpers
+print_status() {
+    echo -e "\033[1;34m[INFO]\033[0m $1"
+}
+
+print_success() {
+    echo -e "\033[1;32m[SUCCESS]\033[0m $1"
+}
+
+print_error() {
+    echo -e "\033[1;31m[ERROR]\033[0m $1"
+}
+
+print_status "Loading environment variables from $ENV_FILE"
+set -a
+source "$ENV_FILE"
+set +a
+print_success "Environment variables loaded"
+
+# Default ports
+DEFAULT_FRONTEND_PORT=$NODE_APP_PORT
+DEFAULT_BACKEND_PORT=$PYTHON_APP_PORT
+
+# Get current ports or use defaults (prefer env, fall back to files if present)
+FRONTEND_PORT=${NODE_APP_PORT}
+BACKEND_PORT=${PYTHON_APP_PORT}
+if [ -f "$LOG_DIR/.frontend_port" ]; then FRONTEND_PORT=$(cat "$LOG_DIR/.frontend_port" 2>/dev/null || echo "$FRONTEND_PORT"); fi
+if [ -f "$LOG_DIR/.backend_port" ]; then BACKEND_PORT=$(cat "$LOG_DIR/.backend_port" 2>/dev/null || echo "$BACKEND_PORT"); fi
 
 echo "Silver Star Application Status"
 echo "=============================="

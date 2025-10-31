@@ -58,10 +58,10 @@ uv sync --extra craigslist
 
 # In this folder
 cd scrapers/craigslist
-uv run uvicorn server:app --reload --port 8000
+uv run uvicorn server:app --reload --port $PYTHON_APP_PORT
 ```
 
-Open http://127.0.0.1:8000/docs for interactive Swagger UI.
+Open http://127.0.0.1:$PYTHON_APP_PORT/docs for interactive Swagger UI.
 
 ## Notes
 

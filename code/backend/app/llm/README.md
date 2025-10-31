@@ -109,7 +109,7 @@ Use `uv sync` to install and `uv run` to execute commands within the project env
    uv sync
    ```
 
-2. Configure your API keys in `../.env`
+2. Configure your API keys in `code/.env`
 
 3. Start the backend server:
    ```bash
@@ -117,7 +117,8 @@ Use `uv sync` to install and `uv run` to execute commands within the project env
    uv run uvicorn app.main:app --reload
    ```
 
-4. Access the chatbot UI at `http://localhost:3000/chatbot`
+4. Access the chatbot UI at `http://localhost:NODE_APP_PORT/chatbot`
+
 
 ## Audio-Enabled Chatbot
 

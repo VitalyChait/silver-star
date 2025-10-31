@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings
 from pydantic import Field
 import secrets
+import os
 
 
 class Settings(BaseSettings):
@@ -9,7 +10,8 @@ class Settings(BaseSettings):
     database_url: str = Field(default="sqlite:///./data.db", alias="DATABASE_URL")
     secret_key: str = Field(default_factory=lambda: secrets.token_urlsafe(32), alias="SECRET_KEY")
     access_token_expire_minutes: int = 60 * 24  # 24 hours
-    frontend_origin: str = Field(default="http://localhost:3000")
+    # Use safe default and avoid int() at import time
+    frontend_origin: str = Field(default=f"http://localhost:{os.getenv('NODE_APP_PORT', '3000')}" )
 
     model_config = {
         "env_file": ".env",
